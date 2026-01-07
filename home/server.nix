@@ -11,7 +11,6 @@ in {
 
   home.packages = with pkgs; [
     rustup
-    llvmPackages_20.libcxxClang
     protobuf
     ffmpeg-full
     pkg-config
