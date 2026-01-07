@@ -29,6 +29,7 @@ in {
     papirus-icon-theme
     nightfox-gtk-theme
     obs-studio
+    google-cloud-sdk
     technorino.packages.${stdenv.hostPlatform.system}.package
   ];
 

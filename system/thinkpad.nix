@@ -53,6 +53,22 @@ in {
     # Enable some SysRq keys (80 = sync + process kill)
     # See: https://docs.kernel.org/admin-guide/sysrq.html
     kernel.sysctl."kernel.sysrq" = 80;
+    kernelParams = lib.mkAfter [ "pcie_aspm=off" ];
+  };
+
+  systemd.services.thermal-throttle = {
+    description = "Userspace CPU thermal throttle for Snapdragon X Elite";
+    wantedBy = [ "multi-user.target" ];
+    
+    script = ''
+      ${pkgs.python3}/bin/python3 ${./thinkpad/thermal-throttle.py}
+    '';
+    
+    serviceConfig = {
+      Type = "simple";
+      Restart = "always";
+      RestartSec = 5;
+    };
   };
 
   # Filesystems
