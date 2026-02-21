@@ -4,7 +4,7 @@
     nixpkgs-unstable.url = "github:nixos/nixpkgs/nixos-unstable";
 
     x1e-nixos-config = {
-      url = "github:kuruczgy/x1e-nixos-config/v6.18";
+      url = "github:kuruczgy/x1e-nixos-config";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -79,13 +79,7 @@
         overlays = [
           nix-your-shell.overlays.default
           (final: prev: {
-            tlp = prev.tlp.overrideAttrs (oldAttrs: rec {
-              version = "1.9.0";
-              src = oldAttrs.src.override {
-                rev = "1.9.0";
-                hash = "sha256-aM/4+cgtUe6qv3MNT4moXvNzqG5gKvwMbg14L8ifWlc=";
-              };
-            });
+            code-cursor = pkgs-unstable.code-cursor;
           })
         ];
       };
@@ -117,7 +111,6 @@
           x1e-nixos-config.nixosModules.x1e
           {
             home-manager.extraSpecialArgs = {inherit technorino;};
-            home-manager.sharedModules = [];
           }
         ];
       };

@@ -29,10 +29,10 @@ in {
     wants = ["wireplumber.service"];
     script = ''
       sleep 5
-      ${pkgs.alsa-utils}/bin/amixer -c 0 sset 'RX_COMP1' off
-      ${pkgs.alsa-utils}/bin/amixer -c 0 sset 'RX_COMP2' off
-      ${pkgs.alsa-utils}/bin/amixer -c 0 sset 'WSA WSA_COMP1' off
-      ${pkgs.alsa-utils}/bin/amixer -c 0 sset 'WSA WSA_COMP2' off
+      ${pkgs.alsa-utils}/bin/amixer -c X1E80100LENOVOT sset 'RX_COMP1' off
+      ${pkgs.alsa-utils}/bin/amixer -c X1E80100LENOVOT sset 'RX_COMP2' off
+      ${pkgs.alsa-utils}/bin/amixer -c X1E80100LENOVOT sset 'WSA WSA_COMP1' off
+      ${pkgs.alsa-utils}/bin/amixer -c X1E80100LENOVOT sset 'WSA WSA_COMP2' off
     '';
     serviceConfig = {
       Type = "oneshot";
@@ -54,6 +54,7 @@ in {
     # See: https://docs.kernel.org/admin-guide/sysrq.html
     kernel.sysctl."kernel.sysrq" = 80;
     kernelParams = lib.mkAfter [ "pcie_aspm=off" ];
+    binfmt.emulatedSystems = [ "x86_64-linux" ];
   };
 
   systemd.services.thermal-throttle = {
