@@ -76,8 +76,17 @@ in {
     };
     script = ''
       echo "Resyncing /boot/efi"
-      mdadm -A /dev/md100 --uuid=157660cb:85532742:c1a1af01:b6df6973 --update=resync
-      mount /dev/md100 /boot/efi
+      if ! grep -q md100 /proc/mdstat; then
+        mdadm -A /dev/md100 --uuid=157660cb:85532742:c1a1af01:b6df6973 --update=resync
+      else
+        echo "md100 already assembled, requesting resync"
+        mdadm --action=repair /dev/md100 || true
+      fi
+      if ! mountpoint -q /boot/efi; then
+        mount /dev/md100 /boot/efi
+      else
+        echo "/boot/efi already mounted"
+      fi
     '';
   };
 
