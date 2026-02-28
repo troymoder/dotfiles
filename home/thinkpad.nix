@@ -108,9 +108,9 @@ in {
     "org/gnome/desktop/sound" = {
       event-sounds = false;
     };
-    
-    "org/gnome/desktop/datetime" = { 
-      automatic-timezone = true; 
+
+    "org/gnome/desktop/datetime" = {
+      automatic-timezone = true;
     };
 
     "org/gnome/system/location" = {

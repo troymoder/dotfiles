@@ -21,8 +21,9 @@ in {
   networking.nameservers = ["1.1.1.1" "1.0.0.1"];
 
   networking.firewall = {
-    trustedInterfaces = [ "tailscale0" ];
-    allowedUDPPorts = [ 41641 1900 5351 ];
+    trustedInterfaces = ["tailscale0"];
+    allowedTCPPorts = [22];
+    allowedUDPPorts = [41641 1900 5351];
   };
 
   services.resolved = {
@@ -68,5 +69,5 @@ in {
 
   networking.hostName = "${variables.username}-${buildName}";
   home-manager.users.${variables.username} = import ../home/${buildName}.nix;
-  nix.settings.trusted-users = [ "@wheel" "root" ];
+  nix.settings.trusted-users = ["@wheel" "root"];
 }
