@@ -119,8 +119,8 @@
         system = "x86_64-linux";
         extraModules = [vscode-server.nixosModules.default];
       };
-      hetzner-vpn = mkSystem {
-        buildName = "hetzner-vpn";
+      hetznerVpn = mkSystem {
+        buildName = "hetznerVpn";
         system = "x86_64-linux";
       };
     };
