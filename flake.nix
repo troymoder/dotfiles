@@ -14,22 +14,22 @@
     };
 
     alejandra = {
-      url = "github:kamadorueda/alejandra/4.0.0";
+      url = "github:kamadorueda/alejandra";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     vscode-server = {
-      url = "github:nix-community/nixos-vscode-server/6d5f074e4811d143d44169ba4af09b20ddb6937d";
+      url = "github:nix-community/nixos-vscode-server";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     nix-ld = {
-      url = "github:Mic92/nix-ld/2.0.6";
+      url = "github:Mic92/nix-ld";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     envfs = {
-      url = "github:Mic92/envfs/1.1.0";
+      url = "github:Mic92/envfs";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -47,6 +47,17 @@
       url = "git+https://github.com/2547techno/technorino?submodules=1";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    lix = {
+      url = "https://git.lix.systems/lix-project/lix/archive/main.tar.gz";
+      flake = false;
+    };
+
+    lix-module = {
+      url = "https://git.lix.systems/lix-project/nixos-module/archive/main.tar.gz";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.lix.follows = "lix";
+    };
   };
 
   outputs = {
@@ -62,6 +73,7 @@
     nixpkgs-unstable,
     nix-index-database,
     technorino,
+    lix-module,
     ...
   }: let
     mkSystem = {
@@ -79,7 +91,7 @@
         overlays = [
           nix-your-shell.overlays.default
           (final: prev: {
-            code-cursor = pkgs-unstable.code-cursor;
+            vscode = pkgs-unstable.vscode;
           })
         ];
       };
@@ -92,6 +104,7 @@
             home-manager.nixosModules.home-manager
             nix-ld.nixosModules.nix-ld
             envfs.nixosModules.envfs
+            lix-module.nixosModules.default
             {
               home-manager.sharedModules = [
                 nix-index-database.homeModules.default

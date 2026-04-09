@@ -22,7 +22,7 @@ in {
       commandLineArgs = "--force-dark-mode";
       enableWideVine = true;
     })
-    code-cursor
+    vscode
     vesktop
     gnome-tweaks
     gnomeExtensions.user-themes

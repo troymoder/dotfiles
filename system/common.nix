@@ -9,7 +9,7 @@
 in {
   nix = {
     channel.enable = false;
-    settings.experimental-features = ["nix-command" "flakes"];
+    settings.experimental-features = ["nix-command" "flakes" "flake-self-attrs"];
   };
 
   home-manager.useGlobalPkgs = true;
@@ -34,7 +34,7 @@ in {
     dnsovertls = "opportunistic";
   };
 
-    # Docker (rootless)
+  # Docker (rootless)
   virtualisation.docker.rootless = {
     enable = true;
     setSocketVariable = true;
@@ -71,8 +71,6 @@ in {
     settings.PasswordAuthentication = false;
     settings.PermitRootLogin = "no";
   };
-
-  time.timeZone = lib.mkForce null;
 
   environment.sessionVariables = {
     ENVFS_RESOLVE_ALWAYS = "1";

@@ -45,6 +45,7 @@ in {
     neovim
     rustup
     gcc15
+    uv
 
     # System tools
     iperf3

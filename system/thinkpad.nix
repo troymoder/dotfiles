@@ -46,7 +46,6 @@ in {
     };
   };
 
-
   systemd.user.services.disable-audio-compressors = {
     description = "Disable audio compressors";
     wantedBy = ["graphical-session.target"];

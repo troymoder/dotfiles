@@ -93,7 +93,7 @@ in {
   services.vscode-server = {
     enable = true;
     enableFHS = true;
-    installPath = ["$HOME/.vscode-server" "$HOME/.cursor-server"];
+    installPath = ["$HOME/.vscode-server"];
   };
 
   # Networking
