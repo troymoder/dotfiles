@@ -12,6 +12,7 @@ in {
     kernelModules = ["dm-snapshot" "md_mod"];
   };
 
+  boot.kernelPackages = pkgs.linuxPackages_latest;
   boot.kernelModules = ["kvm-amd" "md_mod"];
   boot.kernelParams = ["transparent_hugepage=madvise"];
   boot.extraModulePackages = [];
