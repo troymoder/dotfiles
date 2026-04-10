@@ -127,6 +127,15 @@
           }
         ];
       };
+      framework = mkSystem {
+        buildName = "framework";
+        system = "x86_64-linux";
+        extraModules = [
+          {
+            home-manager.extraSpecialArgs = {inherit technorino;};
+          }
+        ];
+      };
       server = mkSystem {
         buildName = "server";
         system = "x86_64-linux";
