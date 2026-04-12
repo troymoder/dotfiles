@@ -4,19 +4,22 @@ screen_height = Window.GetHeight();
 if (screen_width < screen_height) short_side = screen_width;
 else                              short_side = screen_height;
 
-// ---------- two wallpapers ----------
-wallpaper_clear_sprite = Sprite(Image("wallpaper.png"));
-wallpaper_clear_sprite.SetX(0);
-wallpaper_clear_sprite.SetY(0);
-wallpaper_clear_sprite.SetZ(-100);
+// ---------- LCG random ----------
+rand_seed = 1234567;
+fun rand() {
+    rand_seed = (rand_seed * 1103515245 + 12345) % 2147483648;
+    return rand_seed / 2147483648;
+}
 
-wallpaper_blur_sprite = Sprite(Image("wallpaper-blur.png"));
-wallpaper_blur_sprite.SetX(0);
-wallpaper_blur_sprite.SetY(0);
-wallpaper_blur_sprite.SetZ(-90);
-wallpaper_blur_sprite.SetOpacity(0);  // hidden by default
+// ---------- wallpapers ----------
+wallpaper_clear = Sprite(Image("wallpaper.png"));
+wallpaper_clear.SetX(0); wallpaper_clear.SetY(0); wallpaper_clear.SetZ(-100);
 
-// ---------- avatar (hidden until password asked) ----------
+wallpaper_blur = Sprite(Image("wallpaper-blur.png"));
+wallpaper_blur.SetX(0); wallpaper_blur.SetY(0); wallpaper_blur.SetZ(-90);
+wallpaper_blur.SetOpacity(0);
+
+// ---------- avatar ----------
 avatar_image  = Image("avatar.png");
 avatar_size   = short_side * 0.18;
 avatar_scaled = avatar_image.Scale(avatar_size, avatar_size);
@@ -27,50 +30,59 @@ avatar_sprite.SetZ(10);
 avatar_sprite.SetOpacity(0);
 
 // ---------- snow ----------
-// Pre-create a pool of snowflake sprites and recycle them.
-snow_count = 80;
+snow_count = 60;
 snow_img = Image("snow.png");
+snow_w = snow_img.GetWidth();
+snow_h = snow_img.GetHeight();
+
 snow_sprites = [];
 snow_x = [];
 snow_y = [];
-snow_vy = [];      // fall speed (px per tick)
-snow_vx = [];      // drift speed
-snow_size = [];    // scale factor
+snow_vy = [];
+snow_vx = [];
 
-// Simple pseudo-random: Plymouth has Math.Random() returning 0..1
-for (i = 0; i < snow_count; i++) {
-    sz = 0.5 + Math.Random() * 1.2;
-    flake_scaled = snow_img.Scale(snow_img.GetWidth() * sz, snow_img.GetHeight() * sz);
-    s = Sprite(flake_scaled);
+i = 0;
+while (i < snow_count) {
+    sz = 0.6 + rand() * 1.4;
+    flake = snow_img.Scale(snow_w * sz, snow_h * sz);
+    s = Sprite(flake);
     s.SetZ(5);
-    snow_sprites[i] = s;
-    snow_x[i]  = Math.Random() * screen_width;
-    snow_y[i]  = Math.Random() * screen_height;
-    snow_vy[i] = 0.5 + Math.Random() * 1.5;
-    snow_vx[i] = (Math.Random() - 0.5) * 0.6;
-    snow_size[i] = sz;
+    s.SetOpacity(1);
+    snow_x[i]  = rand() * screen_width;
+    snow_y[i]  = rand() * screen_height;
+    snow_vy[i] = 1 + rand() * 2;
+    snow_vx[i] = (rand() - 0.5) * 1;
     s.SetX(snow_x[i]);
     s.SetY(snow_y[i]);
+    snow_sprites[i] = s;
+    i++;
 }
 
-// Mode: 0 = idle (snow + clear bg), 1 = password (blur + avatar + prompt)
-mode = 0;
+mode = 0;  // 0 = idle, 1 = password
 
 fun set_mode_idle() {
     mode = 0;
-    wallpaper_blur_sprite.SetOpacity(0);
+    wallpaper_blur.SetOpacity(0);
     avatar_sprite.SetOpacity(0);
-    for (i = 0; i < snow_count; i++) snow_sprites[i].SetOpacity(1);
+    i = 0;
+    while (i < snow_count) {
+        snow_sprites[i].SetOpacity(1);
+        i++;
+    }
 }
 
 fun set_mode_password() {
     mode = 1;
-    wallpaper_blur_sprite.SetOpacity(1);
+    wallpaper_blur.SetOpacity(1);
     avatar_sprite.SetOpacity(1);
-    for (i = 0; i < snow_count; i++) snow_sprites[i].SetOpacity(0);
+    i = 0;
+    while (i < snow_count) {
+        snow_sprites[i].SetOpacity(0);
+        i++;
+    }
 }
 
-// ---------- prompt label (scaled up for readability) ----------
+// ---------- prompt label ----------
 prompt_label = NULL;
 fun refresh_prompt_text(text) {
     prompt_label = NULL;
@@ -83,11 +95,12 @@ fun refresh_prompt_text(text) {
     prompt_label.SetZ(20);
 }
 
-// ---------- password dots ----------
+// ---------- bullets ----------
 bullets = [];
 bullet_count_prev = 0;
 fun show_bullets(count) {
-    for (i = 0; i < bullet_count_prev; i++) bullets[i] = NULL;
+    i = 0;
+    while (i < bullet_count_prev) { bullets[i] = NULL; i++; }
     bullet_count_prev = count;
     if (count < 1) return;
 
@@ -98,16 +111,18 @@ fun show_bullets(count) {
     start_x = (screen_width - total_w) / 2;
     y = (screen_height / 2) + short_side * 0.18;
 
-    for (i = 0; i < count; i++) {
+    i = 0;
+    while (i < count) {
         s = Sprite(Image("bullet.png"));
         s.SetX(start_x + i * spacing);
         s.SetY(y);
         s.SetZ(20);
         bullets[i] = s;
+        i++;
     }
 }
 
-// ---------- message line ----------
+// ---------- message ----------
 message_sprite = NULL;
 fun display_message_callback(text) {
     message_sprite = NULL;
@@ -121,9 +136,7 @@ fun display_message_callback(text) {
 }
 Plymouth.SetDisplayMessageFunction(display_message_callback);
 
-fun hide_message_callback(text) {
-    message_sprite = NULL;
-}
+fun hide_message_callback(text) { message_sprite = NULL; }
 Plymouth.SetHideMessageFunction(hide_message_callback);
 
 // ---------- password callbacks ----------
@@ -142,23 +155,20 @@ fun display_normal_callback() {
 }
 Plymouth.SetDisplayNormalFunction(display_normal_callback);
 
-// ---------- refresh: animate snow while idle ----------
+// ---------- refresh: animate snow ----------
 fun refresh_callback() {
     if (mode != 0) return;
-    for (i = 0; i < snow_count; i++) {
+    i = 0;
+    while (i < snow_count) {
         snow_y[i] = snow_y[i] + snow_vy[i];
         snow_x[i] = snow_x[i] + snow_vx[i];
         if (snow_y[i] > screen_height) {
-            snow_y[i] = -10;
-            snow_x[i] = Math.Random() * screen_width;
+            snow_y[i] = 0 - 20;
+            snow_x[i] = rand() * screen_width;
         }
-        if (snow_x[i] < -10) snow_x[i] = screen_width + 10;
-        if (snow_x[i] > screen_width + 10) snow_x[i] = -10;
         snow_sprites[i].SetX(snow_x[i]);
         snow_sprites[i].SetY(snow_y[i]);
+        i++;
     }
 }
 Plymouth.SetRefreshFunction(refresh_callback);
-
-// Start in idle mode
-set_mode_idle();
