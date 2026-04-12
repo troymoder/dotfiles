@@ -15,6 +15,9 @@
     nvidia.enable = true;
   };
 
+  services.colord.enable = true;
+  environment.etc."color/icc/BOE_CQ_______NE160QDM_NZ6.icc".source = ../static/BOE_CQ_______NE160QDM_NZ6.icc;
+
   fileSystems."/" = {
     device = "/dev/disk/by-label/nixos";
     fsType = "xfs";
