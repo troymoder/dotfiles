@@ -48,7 +48,6 @@ in {
       grub = {
         enable = true;
         efiSupport = true;
-        devices = ["nodev"];
         mirroredBoots = map (path: {
           devices = ["nodev"];
           path = path;
