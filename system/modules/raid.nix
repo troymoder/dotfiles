@@ -48,11 +48,13 @@ in {
       grub = {
         enable = true;
         efiSupport = true;
-        mirroredBoots = map (path: {
-          devices = ["nodev"];
-          path = path;
-          efiSysMountPoint = path;
-        }) cfg.efiDirectories;
+        mirroredBoots =
+          map (path: {
+            devices = ["nodev"];
+            path = path;
+            efiSysMountPoint = path;
+          })
+          cfg.efiDirectories;
       };
     };
   };

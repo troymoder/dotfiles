@@ -31,6 +31,13 @@ in {
     services.displayManager.gdm = {
       enable = true;
       wayland = cfg.wayland;
+
+      autoLogin =
+        lib.mkIf cfg.autoLogin
+        != null {
+          enable = true;
+          user = cfg.autoLogin;
+        };
     };
 
     services.desktopManager.gnome = {

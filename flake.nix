@@ -106,7 +106,11 @@
         modules =
           [
             lix-module.nixosModules.default
-            ({ pkgs, lib, ... }: {
+            ({
+              pkgs,
+              lib,
+              ...
+            }: {
               nix.package = lib.mkForce (pkgs.lix.overrideAttrs (old: {
                 doCheck = false;
                 doInstallCheck = false;

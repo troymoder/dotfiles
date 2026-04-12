@@ -60,6 +60,12 @@ in {
       default = [];
       description = "Additional desktop packages";
     };
+
+    autoLoginUser = lib.mkOption {
+      type = lib.types.str;
+      default = null;
+      description = "Enable autologin";
+    };
   };
 
   config = lib.mkIf cfg.enable {

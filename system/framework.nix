@@ -15,7 +15,7 @@
     raid = {
       enable = true;
       rootMdUuid = "cb37143d:d9cb8ef8:f0081246:a0716c23";
-      efiDirectories = [ "/boot/efi1" ];
+      efiDirectories = ["/boot/efi1"];
     };
   };
 
@@ -45,7 +45,7 @@
     theme = "breeze";
   };
 
-  boot.kernelParams = [ "quiet" "splash" "loglevel=3" "rd.udev.log_level=3" ];
+  boot.kernelParams = ["quiet" "splash" "loglevel=3" "rd.udev.log_level=3"];
   boot.consoleLogLevel = 0;
   boot.initrd.verbose = false;
   boot.initrd.systemd.enable = true;
