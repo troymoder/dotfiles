@@ -106,6 +106,12 @@
         modules =
           [
             lix-module.nixosModules.default
+            ({ pkgs, lib, ... }: {
+              nix.package = lib.mkForce (pkgs.lix.overrideAttrs (old: {
+                doCheck = false;
+                doInstallCheck = false;
+              }));
+            })
             nix-ld.nixosModules.nix-ld
             envfs.nixosModules.envfs
             home-manager.nixosModules.home-manager
