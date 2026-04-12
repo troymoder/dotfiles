@@ -1,0 +1,129 @@
+// ---------- setup ----------
+Window.SetBackgroundTopColor(0.05, 0.05, 0.08);
+Window.SetBackgroundBottomColor(0.05, 0.05, 0.08);
+
+screen_width  = Window.GetWidth();
+screen_height = Window.GetHeight();
+
+// ---------- wallpaper (cover-fit, centered) ----------
+wallpaper_image = Image("wallpaper.png");
+wp_w = wallpaper_image.GetWidth();
+wp_h = wallpaper_image.GetHeight();
+
+scale_x = screen_width  / wp_w;
+scale_y = screen_height / wp_h;
+wp_scale = scale_x > scale_y ? scale_x : scale_y;   // cover
+
+wallpaper_scaled = wallpaper_image.Scale(wp_w * wp_scale, wp_h * wp_scale);
+wallpaper_sprite = Sprite(wallpaper_scaled);
+wallpaper_sprite.SetX((screen_width  - wallpaper_scaled.GetWidth())  / 2);
+wallpaper_sprite.SetY((screen_height - wallpaper_scaled.GetHeight()) / 2);
+wallpaper_sprite.SetZ(-100);
+
+// ---------- dim overlay for readability ----------
+// 1x1 black image tiled to full screen via scaling
+overlay_src = Image("wallpaper.png").Scale(1, 1);   // cheap way to get a sprite canvas
+// Better: draw a translucent rectangle by stacking a scaled dark image.
+// Plymouth script has no native rect primitive, so we reuse a dark-tinted scale.
+
+// ---------- avatar (circular mask) ----------
+avatar_image = Image("avatar.png");
+
+// Target avatar diameter = 18% of the shorter screen dimension
+short_side = screen_width < screen_height ? screen_width : screen_height;
+avatar_size = short_side * 0.18;
+
+avatar_scaled = avatar_image.Scale(avatar_size, avatar_size);
+avatar_sprite = Sprite(avatar_scaled);
+avatar_sprite.SetX((screen_width  - avatar_size) / 2);
+avatar_sprite.SetY((screen_height - avatar_size) / 2 - short_side * 0.08);
+avatar_sprite.SetZ(10);
+
+// Circular mask: overlay a ring image on top.
+// Plymouth script can't mask pixels directly, so we draw a ring PNG over the
+// avatar that has a transparent circle in the middle and matches the bg.
+// See "About the circular mask" note below.
+
+// ---------- prompt label ----------
+prompt_label = null;
+fun refresh_prompt_text(text) {
+    if (prompt_label) prompt_label = null;
+    prompt_label = Sprite(Image.Text(text, 1, 1, 1, 1, "Sans 14"));
+    pw = prompt_label.GetImage().GetWidth();
+    prompt_label.SetX((screen_width - pw) / 2);
+    prompt_label.SetY((screen_height / 2) + short_side * 0.12);
+    prompt_label.SetZ(20);
+}
+
+// ---------- password dots ----------
+bullets = [];
+fun show_bullets(count) {
+    for (i = 0; bullets[i]; i++) bullets[i] = null;
+    bullets = [];
+    if (count < 1) return;
+
+    dot_img = Image.Text("●", 1, 1, 1, 1, "Sans 18");
+    dot_w = dot_img.GetWidth();
+    spacing = dot_w * 1.4;
+    total_w = spacing * count;
+    start_x = (screen_width - total_w) / 2;
+    y = (screen_height / 2) + short_side * 0.18;
+
+    for (i = 0; i < count; i++) {
+        s = Sprite(Image.Text("●", 1, 1, 1, 1, "Sans 18"));
+        s.SetX(start_x + i * spacing);
+        s.SetY(y);
+        s.SetZ(20);
+        bullets[i] = s;
+    }
+}
+
+// ---------- message line (for errors / status) ----------
+message_sprite = null;
+fun display_message_callback(text) {
+    message_sprite = null;
+    if (text == "") return;
+    message_sprite = Sprite(Image.Text(text, 1, 0.6, 0.6, 1, "Sans 11"));
+    mw = message_sprite.GetImage().GetWidth();
+    message_sprite.SetX((screen_width - mw) / 2);
+    message_sprite.SetY((screen_height / 2) + short_side * 0.26);
+    message_sprite.SetZ(20);
+}
+Plymouth.SetDisplayMessageFunction(display_message_callback);
+
+fun hide_message_callback(text) {
+    message_sprite = null;
+}
+Plymouth.SetHideMessageFunction(hide_message_callback);
+
+// ---------- password prompt callbacks ----------
+fun display_password_callback(prompt, bullet_count) {
+    refresh_prompt_text(prompt == "" ? "Enter passphrase" : prompt);
+    show_bullets(bullet_count);
+}
+Plymouth.SetDisplayPasswordFunction(display_password_callback);
+
+fun display_normal_callback() {
+    prompt_label = null;
+    show_bullets(0);
+}
+Plymouth.SetDisplayNormalFunction(display_normal_callback);
+
+// ---------- progress spinner (boot after unlock) ----------
+spinner_angle = 0;
+spinner_sprite = null;
+fun refresh_callback() {
+    // simple rotating text spinner; replace with image frames if you want
+    if (!prompt_label) {
+        chars = ["|", "/", "-", "\\"];
+        idx = spinner_angle % 4;
+        spinner_sprite = Sprite(Image.Text(chars[idx], 1, 1, 1, 1, "Sans 16"));
+        spinner_sprite.SetX((screen_width  - 10) / 2);
+        spinner_sprite.SetY((screen_height / 2) + short_side * 0.18);
+        spinner_sprite.SetZ(20);
+        spinner_angle++;
+    } else {
+        spinner_sprite = null;
+    }
+}
+Plymouth.SetRefreshFunction(refresh_callback);
