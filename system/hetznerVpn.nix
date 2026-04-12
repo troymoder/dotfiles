@@ -1,5 +1,4 @@
 {
-  pkgs,
   modulesPath,
   lib,
   ...
@@ -8,10 +7,16 @@
     "${modulesPath}/profiles/qemu-guest.nix"
   ];
 
-  boot.loader.systemd-boot.enable = true;
-  boot.loader.efi.canTouchEfiVariables = true;
+  modules = {
+    dns.enable = true;
+    home-manager.enable = true;
+    networking.enable = true;
+    systemd-boot.enable = true;
+    tailscale.enable = true;
+  };
 
-  networking.useDHCP = true;
+  boot.initrd.availableKernelModules = ["ahci" "xhci_pci" "virtio_pci" "virtio_scsi" "sd_mod" "sr_mod"];
+  nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
 
   fileSystems."/" = {
     device = "/dev/disk/by-uuid/f755e68f-b67f-4f90-b54c-fee08b09348a";
@@ -24,8 +29,5 @@
     options = ["fmask=0022" "dmask=0022"];
   };
 
-  boot.initrd.availableKernelModules = ["ahci" "xhci_pci" "virtio_pci" "virtio_scsi" "sd_mod" "sr_mod"];
   system.stateVersion = "25.11";
-
-  nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
 }

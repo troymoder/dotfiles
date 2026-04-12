@@ -3,45 +3,41 @@
   lib,
   pkgs,
   ...
-}: let
-  variables = import ../variables.nix;
-in {
+}: {
+  modules = {
+    dns.enable = true;
+    docker.enable = true;
+    home-manager.enable = true;
+    networking.enable = true;
+    tailscale.enable = true;
+    nvidia.enable = true;
+    vscode-server.enable = true;
+  };
+
   # Hardware detection
-  boot.initrd = {
-    availableKernelModules = ["xhci_pci" "nvme" "ahci" "usbhid" "usb_storage" "sr_mod" "md_mod" "raid1" "raid10"];
-    kernelModules = ["dm-snapshot" "md_mod"];
-  };
-
-  boot.kernelPackages = pkgs.linuxPackages_latest;
-  boot.kernelModules = ["kvm-amd" "md_mod"];
-  boot.kernelParams = ["transparent_hugepage=madvise"];
-  boot.extraModulePackages = [];
-
-  # CPU & Hardware
-  hardware = {
-    cpu.amd.updateMicrocode = true;
-
-    # NVIDIA
-    nvidia-container-toolkit.enable = true;
-    nvidia = {
-      open = false;
-      package = config.boot.kernelPackages.nvidiaPackages.stable;
-      nvidiaPersistenced = true;
-      datacenter.enable = false;
-      nvidiaSettings = true;
-      modesetting.enable = true;
+  boot = {
+    initrd = {
+      availableKernelModules = ["xhci_pci" "nvme" "ahci" "usbhid" "usb_storage" "sr_mod" "md_mod" "raid1" "raid10"];
+      kernelModules = ["dm-snapshot" "md_mod"];
     };
+    kernelModules = ["kvm-amd" "md_mod"];
+    kernelParams = ["transparent_hugepage=madvise"];
+    supportedFilesystems = ["xfs" "fat32"];
   };
 
-  services.xserver.videoDrivers = ["nvidia"];
+  # CPU
+  hardware.cpu.amd.updateMicrocode = true;
 
-  # Filesystems
+  # This system has a raid on the root and /boot/efi partitions.
+  # Now the root is fine but raid on EFI can be tricky.
+  # Since the /boot/efi partition can be changed outside of the linux os
+  # meaning outside of our software raid. So we need to manually construct the
+  # array after boot to ensure its correctly synced.
+
   fileSystems."/" = {
     device = "/dev/disk/by-label/NIXROOT";
     fsType = "xfs";
   };
-
-  boot.supportedFilesystems = ["xfs" "fat32"];
 
   # RAID Configuration
   boot.swraid = {
@@ -90,17 +86,8 @@ in {
     '';
   };
 
-  # VSCode Server (for remote development)
-  services.vscode-server = {
-    enable = true;
-    enableFHS = true;
-    installPath = ["$HOME/.vscode-server"];
-  };
-
-  # Networking
-  # LACP bond configuration
+  # This server has a BOND LCAP connection
   networking.networkmanager = {
-    enable = true;
     ensureProfiles.profiles = {
       "Bond connection 1" = {
         bond = {

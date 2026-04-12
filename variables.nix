@@ -1,6 +1,8 @@
 {
   username = "troy";
-  name = "Troy Benson";
-  email = "troybensonsa@gmail.com";
-  sshKeyPub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC/CUgTyPFnJj7RFr/T8Hf1gNLERxrgPmB5Obk9uEstc troybensonsa@gmail.com";
+  git = {
+    fullName = "Troy Benson";
+    email = "me@troymoder.dev";
+  };
+  sshKeyPub = builtins.readFile ./id_ed25519.pub;
 }

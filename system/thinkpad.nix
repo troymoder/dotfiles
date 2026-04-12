@@ -2,50 +2,26 @@
   pkgs,
   lib,
   ...
-}: let
-  variables = import ../variables.nix;
-  timezone = "Africa/Johannesburg";
-in {
-  # Hardware
-  hardware = {
-    lenovo-thinkpad-t14s.enable = true;
-    enableRedistributableFirmware = true;
+}: {
+  # Enable the settings for this laptop
+  hardware.lenovo-thinkpad-t14s.enable = true;
+
+  modules = {
+    audio.enable = true;
     bluetooth.enable = true;
+    dns.enable = true;
+    docker.enable = true;
+    fingerprint.enable = true;
+    gnome.enable = true;
+    home-manager.enable = true;
+    networking.enable = true;
+    printing.enable = true;
+    swap.enable = true;
+    systemd-boot.enable = true;
+    tailscale.enable = true;
   };
 
-  # For Audio
-  security.rtkit.enable = true;
-  services.pipewire = {
-    enable = true;
-    alsa.enable = true;
-    alsa.support32Bit = true;
-    pulse.enable = true;
-  };
-
-  # For Printing
-  services.avahi = {
-    enable = true;
-    nssmdns4 = true;
-    openFirewall = true;
-  };
-
-  services.printing = {
-    enable = true;
-    drivers = with pkgs; [
-      cups-filters
-      cups-browsed
-    ];
-  };
-
-  # Disable touchpad while typing
-  services.libinput = {
-    enable = true;
-    touchpad = {
-      tapping = false;
-      disableWhileTyping = true;
-    };
-  };
-
+  # Special service for disabling audio compressors
   systemd.user.services.disable-audio-compressors = {
     description = "Disable audio compressors";
     wantedBy = ["graphical-session.target"];
@@ -67,23 +43,17 @@ in {
     };
   };
 
-  # Boot
   boot = {
-    loader.systemd-boot.enable = true;
-    loader.systemd-boot.configurationLimit = 20;
-
-    initrd.systemd = {
-      enable = true;
-      emergencyAccess = true; # Not secure, but easier for debugging
-    };
-
     # Enable some SysRq keys (80 = sync + process kill)
     # See: https://docs.kernel.org/admin-guide/sysrq.html
     kernel.sysctl."kernel.sysrq" = 80;
+    # Improves system performance
     kernelParams = lib.mkAfter ["pcie_aspm=off"];
+    # This is to get emulation for x86-64 on aarch64
     binfmt.emulatedSystems = ["x86_64-linux"];
   };
 
+  # Correctly thermal throttle on this machine
   systemd.services.thermal-throttle = {
     description = "Userspace CPU thermal throttle for Snapdragon X Elite";
     wantedBy = ["multi-user.target"];
@@ -99,133 +69,14 @@ in {
     };
   };
 
-  # Filesystems
-  fileSystems = {
-    "/" = {
-      device = "/dev/disk/by-label/PRIMARY";
-      fsType = "xfs";
-    };
-    "/boot" = {
-      device = "/dev/disk/by-label/BOOT";
-      fsType = "vfat";
-      options = ["umask=0077"];
-    };
+  fileSystems."/" = {
+    device = "/dev/disk/by-label/PRIMARY";
+    fsType = "xfs";
   };
-
-  # Networking
-  networking.networkmanager = {
-    enable = true;
-    plugins = lib.mkForce [];
-  };
-
-  # Fingerprint reader
-  services.fprintd.enable = true;
-
-  # GNOME Desktop Environment
-  services = {
-    xserver.enable = true;
-    xserver.excludePackages = [pkgs.xterm];
-
-    displayManager.gdm = {
-      enable = true;
-      wayland = true;
-    };
-
-    desktopManager.gnome = {
-      enable = true;
-
-      # Enable fractional scaling
-      extraGSettingsOverrides = ''
-        [org.gnome.mutter]
-        experimental-features=['scale-monitor-framebuffer', 'xwayland-native-scaling']
-      '';
-    };
-
-    gnome.gnome-keyring.enable = true;
-  };
-
-  # Wayland environment
-  environment = {
-    sessionVariables = {
-      NIXOS_OZONE_WL = "1"; # Enable Wayland for Electron apps
-      XDG_RUNTIME_DIR = "/run/user/$UID";
-      XDG_DATA_DIRS = ["${pkgs.gdm}/share/gsettings-schemas/gdm-${pkgs.gdm.version}"];
-      TZ = timezone;
-    };
-
-    # System packages (minimal - most should be in home-manager)
-    systemPackages = with pkgs; [
-      neovim
-      alsa-utils
-      alsa-ucm-conf
-      ghostty
-      xdg-terminal-exec
-      libinput
-    ];
-
-    etc."xdg/xdg-terminals.list".text = ''
-      ghostty
-    '';
-
-    # Remove GNOME bloatware
-    gnome.excludePackages = with pkgs; [
-      # Web & Communication
-      epiphany
-      geary
-
-      # Media
-      gnome-music
-      totem
-      cheese
-
-      # Organization
-      gnome-contacts
-      gnome-maps
-      gnome-calendar
-      gnome-weather
-      gnome-clocks
-
-      # Utilities
-      gnome-tour
-      gnome-characters
-      gnome-font-viewer
-      gnome-connections
-      gnome-terminal
-      gnome-console
-      snapshot
-
-      # Games
-      gnome-chess
-      gnome-mahjongg
-      gnome-mines
-      gnome-sudoku
-      gnome-tetravex
-      iagno
-      hitori
-      atomix
-      aisleriot
-      tali
-    ];
-  };
-
-  time.timeZone = timezone;
-
-  users.users.${variables.username}.extraGroups = lib.mkAfter ["docker" "video"];
-
-  # PAM configuration for GNOME Keyring
-  security.pam.services.gdm.enableGnomeKeyring = true;
-
-  # Swap (zram - compressed RAM swap)
-  zramSwap = {
-    enable = true;
-    algorithm = "zstd";
-    memoryPercent = 50;
-  };
-
-  # Power management
-  services = {
-    power-profiles-daemon.enable = false;
-    tlp.enable = true;
+  fileSystems."/boot" = {
+    device = "/dev/disk/by-label/BOOT";
+    fsType = "vfat";
+    options = ["umask=0077"];
   };
 
   system.stateVersion = "25.11";

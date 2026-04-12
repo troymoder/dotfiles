@@ -76,6 +76,8 @@
     lix-module,
     ...
   }: let
+    variables = import ./variables.nix;
+
     mkSystem = {
       buildName,
       system,
@@ -98,19 +100,29 @@
     in
       nixpkgs.lib.nixosSystem {
         inherit system pkgs;
-        specialArgs = {inherit buildName;};
+        specialArgs = {
+          inherit buildName nixpkgs variables;
+        };
         modules =
           [
-            home-manager.nixosModules.home-manager
+            lix-module.nixosModules.default
             nix-ld.nixosModules.nix-ld
             envfs.nixosModules.envfs
-            lix-module.nixosModules.default
+            home-manager.nixosModules.home-manager
+            nix-index-database.nixosModules.default
+            vscode-server.nixosModules.default
+            x1e-nixos-config.nixosModules.x1e
             {
+              home-manager.useGlobalPkgs = true;
+              home-manager.extraSpecialArgs = {
+                inherit technorino variables;
+              };
               home-manager.sharedModules = [
                 nix-index-database.homeModules.default
+                ./home/modules
               ];
             }
-            ./system/common.nix
+            ./system/modules
             ./system/${buildName}.nix
           ]
           ++ extraModules;
@@ -120,26 +132,14 @@
       thinkpad = mkSystem {
         buildName = "thinkpad";
         system = "aarch64-linux";
-        extraModules = [
-          x1e-nixos-config.nixosModules.x1e
-          {
-            home-manager.extraSpecialArgs = {inherit technorino;};
-          }
-        ];
       };
       framework = mkSystem {
         buildName = "framework";
         system = "x86_64-linux";
-        extraModules = [
-          {
-            home-manager.extraSpecialArgs = {inherit technorino;};
-          }
-        ];
       };
       server = mkSystem {
         buildName = "server";
         system = "x86_64-linux";
-        extraModules = [vscode-server.nixosModules.default];
       };
       hetznerVpn = mkSystem {
         buildName = "hetznerVpn";
