@@ -67,7 +67,7 @@ in {
   boot.plymouth = {
     enable = true;
     theme = "login";
-    themePackages = [ loginPlymouthTheme ]
+    themePackages = [ loginPlymouthTheme ];
   };
 
   boot.kernelParams = [ "quiet" "splash" "loglevel=3" "rd.udev.log_level=3" ];
