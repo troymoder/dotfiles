@@ -1,11 +1,14 @@
-{...}: {
+{variables, ...}: {
   modules = {
     audio.enable = true;
     bluetooth.enable = true;
     dns.enable = true;
     docker.enable = true;
     fingerprint.enable = true;
-    gnome.enable = true;
+    gnome = {
+      enable = true;
+      autoLogin = variables.username;
+    };
     home-manager.enable = true;
     networking.enable = true;
     printing.enable = true;
