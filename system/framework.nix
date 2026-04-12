@@ -1,4 +1,4 @@
-{...}: {
+{pkgs, ...}: {
   modules = {
     audio.enable = true;
     bluetooth.enable = true;
@@ -17,6 +17,10 @@
 
   services.colord.enable = true;
   environment.etc."color/icc/BOE_CQ_______NE160QDM_NZ6.icc".source = ../static/BOE_CQ_______NE160QDM_NZ6.icc;
+
+  environment.systemPackages = [
+    pkgs.fwupd
+  ];
 
   fileSystems."/" = {
     device = "/dev/disk/by-label/nixos";
