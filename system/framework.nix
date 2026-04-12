@@ -16,8 +16,7 @@
     # Blurred + darkened wallpaper (password mode)
     magick ${../static/wallpaper.jpg} \
       -resize 2560x1600^ -gravity center -extent 2560x1600 \
-      -blur 0x20 \
-      -brightness-contrast -15x0 \
+      -blur 0x10 \
       $themeDir/wallpaper-blur.png
 
     # Circular avatar
