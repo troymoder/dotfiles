@@ -20,6 +20,12 @@ in {
       default = [];
       description = "Additional system packages to install";
     };
+
+    autoLoginUser = lib.mkOption {
+      type = lib.types.str;
+      default = null;
+      description = "Enable autologin";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -33,10 +39,10 @@ in {
       wayland = cfg.wayland;
 
       autoLogin =
-        lib.mkIf cfg.autoLogin
+        lib.mkIf cfg.autoLoginUser
         != null {
           enable = true;
-          user = cfg.autoLogin;
+          user = cfg.autoLoginUser;
         };
     };
 

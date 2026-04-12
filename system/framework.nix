@@ -7,7 +7,7 @@
     fingerprint.enable = true;
     gnome = {
       enable = true;
-      autoLogin = variables.username;
+      autoLoginUser = variables.username;
     };
     home-manager.enable = true;
     networking.enable = true;
