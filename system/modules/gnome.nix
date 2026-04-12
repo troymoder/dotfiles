@@ -34,14 +34,11 @@ in {
       excludePackages = [pkgs.xterm];
     };
 
+    services.displayManager.autoLogin.user = cfg.autoLoginUser;
+
     services.displayManager.gdm = {
       enable = true;
       wayland = cfg.wayland;
-
-      autoLogin = lib.mkIf (cfg.autoLoginUser != null) {
-        enable = true;
-        user = cfg.autoLoginUser;
-      };
     };
 
     services.desktopManager.gnome = {
