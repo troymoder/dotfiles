@@ -33,6 +33,7 @@
   programs.steam.enable = true;
   services.pcscd.enable = true;
   services.udev.packages = [pkgs.yubikey-personalization];
+  services.dbus.packages = [pkgs.gcr];
 
   services.ollama = {
     enable = true;

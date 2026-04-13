@@ -28,7 +28,6 @@ in {
         bat
         ripgrep
         fd
-        ldns
 
         # CLI tools
         fzf
@@ -57,6 +56,7 @@ in {
         ethtool
         pciutils
         usbutils
+        dig
 
         # Shell helpers
         direnv

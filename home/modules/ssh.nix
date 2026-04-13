@@ -41,6 +41,8 @@ in {
       enable = true;
       scdaemonSettings = {
         disable-ccid = true;
+        pcsc-shared = true;
+        disable-application = "piv";
       };
     };
 
@@ -48,9 +50,14 @@ in {
 
     services.gpg-agent = {
       enable = true;
+      grabKeyboardAndMouse = false;
       enableSshSupport = true;
       enableScDaemon = true;
-      pinentryPackage = pkgs.pinentry-curses;
+      pinentry.package = pkgs.pinentry-gnome3;
+      defaultCacheTtl = 34560000;
+      maxCacheTtl = 34560000;
+      defaultCacheTtlSsh = 34560000;
+      maxCacheTtlSsh = 34560000;
     };
   };
 }

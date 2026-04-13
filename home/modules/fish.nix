@@ -16,6 +16,7 @@ in {
 
       interactiveShellInit = ''
         set fish_greeting
+        export SHELL="${pkgs.fish}/bin/fish"
         ${pkgs.nix-your-shell}/bin/nix-your-shell fish --info-right | source
       '';
 
@@ -28,7 +29,6 @@ in {
         vi = "nvim";
         ls = "eza";
         cat = "bat";
-        dig = "ldns";
         ".." = "cd ..";
         "..." = "cd ../..";
         "...." = "cd ../../..";
@@ -44,7 +44,7 @@ in {
     programs.bash = {
       enable = true;
       initExtra = ''
-        if [[ $(${pkgs.procps}/bin/ps --no-header --pid=$PPID --format=comm) != "fish" && -z ''${BASH_EXECUTION_STRING} ]]; then
+        if [[ -z $IN_NIX_SHELL && $(${pkgs.procps}/bin/ps --no-header --pid=$PPID --format=comm) != "fish" && -z ''${BASH_EXECUTION_STRING} ]]; then
           shopt -q login_shell && LOGIN_OPTION='--login' || LOGIN_OPTION=""
           exec ${pkgs.fish}/bin/fish $LOGIN_OPTION
         fi

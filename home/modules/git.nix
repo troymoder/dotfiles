@@ -50,7 +50,7 @@ in {
           email = cfg.userEmail;
         };
 
-        credential.helper = "${pkgs.gh}/bin/gh auth git-credential";
+        url."git@github.com:".insteadOf = "https://github.com/";
 
         push.autoSetupRemote = true;
         pull.rebase = false;
