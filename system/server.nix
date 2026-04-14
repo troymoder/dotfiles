@@ -14,7 +14,14 @@
     vscode-server.enable = true;
     grub = {
       enable = true;
-      efiDirectories = ["/boot/efi"];
+      efiDirectories = [
+        "/boot/efi1"
+        "/boot/efi2"
+        "/boot/efi3"
+        "/boot/efi4"
+        "/boot/efi5"
+        "/boot/efi6"
+      ];
     };
     raid = {
       enable = true;
@@ -45,6 +52,30 @@
   fileSystems."/" = {
     device = "/dev/disk/by-label/NIXROOT";
     fsType = "xfs";
+  };
+  fileSystems."/boot/efi1" = {
+    device = "/dev/disk/by-label/efi1";
+    fsType = "vfat";
+  };
+  fileSystems."/boot/efi2" = {
+    device = "/dev/disk/by-label/efi2";
+    fsType = "vfat";
+  };
+  fileSystems."/boot/efi3" = {
+    device = "/dev/disk/by-label/efi3";
+    fsType = "vfat";
+  };
+  fileSystems."/boot/efi4" = {
+    device = "/dev/disk/by-label/efi4";
+    fsType = "vfat";
+  };
+  fileSystems."/boot/efi5" = {
+    device = "/dev/disk/by-label/efi5";
+    fsType = "vfat";
+  };
+  fileSystems."/boot/efi6" = {
+    device = "/dev/disk/by-label/efi6";
+    fsType = "vfat";
   };
 
   # This server has a BOND LCAP connection

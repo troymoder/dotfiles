@@ -13,7 +13,7 @@
       settings.trusted-users = ["@wheel" "root"];
     };
 
-    hardware.enableAllFirmware = true;
+    hardware.enableAllFirmware = lib.mkDefault true;
     boot.kernelPackages = lib.mkDefault pkgs.linuxPackages_latest;
 
     environment.systemPackages = with pkgs; [
@@ -25,6 +25,7 @@
       coreutils
     ];
 
+    services.fwupd.enable = lib.mkDefault true;
     networking.hostName = lib.mkDefault "${variables.username}-${buildName}";
   };
 }

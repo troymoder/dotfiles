@@ -15,7 +15,6 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
-    services.fwupd.enable = true;
     services.pcscd.enable = true;
     services.udev.packages = [pkgs.yubikey-personalization];
     services.dbus.packages = [pkgs.gcr];
