@@ -32,7 +32,7 @@ in {
       key = lib.mkOption {
         type = lib.types.str;
         description = "SSH Signing Key path";
-        default = builtins.toFile "signing-key" variables.sshKeyPub;
+        default = variables.sshKeyPub;
       };
     };
   };
