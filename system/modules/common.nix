@@ -26,6 +26,7 @@
     ];
 
     services.fwupd.enable = lib.mkDefault true;
+    networking.networkmanager.enable = lib.mkDefault true;
     networking.hostName = lib.mkDefault "${variables.username}-${buildName}";
   };
 }

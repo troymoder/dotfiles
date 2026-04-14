@@ -7,11 +7,7 @@
   cfg = config.modules.yubikey;
 in {
   options.modules.yubikey = {
-    enable = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Enable yubikey";
-    };
+    enable = lib.mkEnableOption "Enable yubikey";
   };
 
   config = lib.mkIf cfg.enable {

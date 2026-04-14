@@ -6,11 +6,7 @@
   cfg = config.modules.plymouth;
 in {
   options.modules.plymouth = {
-    enable = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Enable plymouth";
-    };
+    enable = lib.mkEnableOption "enable plymouth";
   };
 
   config = lib.mkIf cfg.enable {

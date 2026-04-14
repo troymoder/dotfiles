@@ -9,11 +9,7 @@
   cfg = config.modules.home-manager;
 in {
   options.modules.home-manager = {
-    enable = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Enable home-manager";
-    };
+    enable = lib.mkEnableOption "Enable home-manager";
 
     username = lib.mkOption {
       type = lib.types.str;

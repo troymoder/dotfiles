@@ -6,11 +6,7 @@
   cfg = config.modules.ssh;
 in {
   options.modules.ssh = {
-    enable = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Enable openssh";
-    };
+    enable = lib.mkEnableOption "Enable openssh";
 
     passwordAuth = lib.mkOption {
       type = lib.types.bool;
