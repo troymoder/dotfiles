@@ -19,6 +19,13 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = !cfg.nvidia || (config.modules ? nvidia && config.modules.nvidia.enable);
+        message = "modules.docker.nvidia requires modules.nvidia.enable = true";
+      }
+    ];
+
     virtualisation.docker.rootless = {
       enable = true;
       setSocketVariable = true;

@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  pkgs,
   ...
 }: let
   cfg = config.modules.yubikey;
@@ -10,7 +11,7 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = [
+    home.packages = with pkgs; [
       yubioath-flutter
       yubikey-manager
       yubikey-personalization

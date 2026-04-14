@@ -4,13 +4,12 @@
   technorino,
   ...
 }: {
+  imports = [
+    ./profiles/base.nix
+  ];
+
   modules = {
-    cli-tools.enable = true;
     dev-tools.enable = true;
-    fish.enable = true;
-    direnv.enable = true;
-    git.enable = true;
-    ssh.enable = true;
     yubikey.enable = true;
 
     gnome-desktop = {

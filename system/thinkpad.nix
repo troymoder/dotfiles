@@ -3,23 +3,14 @@
   lib,
   ...
 }: {
+  imports = [
+    ./presets/desktop.nix
+  ];
+
   # Enable the settings for this laptop
   hardware.lenovo-thinkpad-t14s.enable = true;
 
   modules = {
-    audio.enable = true;
-    bluetooth.enable = true;
-    dns.enable = true;
-    docker.enable = true;
-    fingerprint.enable = true;
-    gnome.enable = true;
-    home-manager.enable = true;
-    networking.enable = true;
-    plymouth.enable = true;
-    printing.enable = true;
-    swap.enable = true;
-    tailscale.enable = true;
-    yubikey.enable = true;
     grub = {
       enable = true;
       efiDirectories = ["/boot/efi"];

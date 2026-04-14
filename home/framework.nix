@@ -4,19 +4,18 @@
   technorino,
   ...
 }: {
+  imports = [
+    ./profiles/base.nix
+  ];
+
   modules = {
-    cli-tools.enable = true;
     dev-tools.enable = true;
-    fish.enable = true;
-    direnv.enable = true;
-    git.enable = true;
-    ssh.enable = true;
-    yubikey.eneble = true;
+    yubikey.enable = true;
 
     gnome-desktop = {
       enable = true;
       extraPackages = with pkgs; [
-        technorino.packages.${stdenv.hostPlatform.system}.package
+        technorino.packages.${pkgs.stdenv.hostPlatform.system}.package
         spotify
         vlc
         slack

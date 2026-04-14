@@ -1,12 +1,10 @@
 # Example: what server.nix looks like now
 {pkgs, ...}: {
-  modules = {
-    cli-tools.enable = true;
-    fish.enable = true;
-    direnv.enable = true;
-    git.enable = true;
-    ssh.enable = true;
+  imports = [
+    ./profiles/base.nix
+  ];
 
+  modules = {
     dev-tools = {
       enable = true;
       rust = true;

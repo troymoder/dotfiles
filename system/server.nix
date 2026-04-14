@@ -4,17 +4,20 @@
   pkgs,
   ...
 }: {
+  imports = [
+    ./presets/server.nix
+  ];
+
   modules = {
-    dns.enable = true;
     docker.enable = true;
-    home-manager.enable = true;
-    networking.enable = true;
-    tailscale.enable = true;
     nvidia.enable = true;
     vscode-server.enable = true;
+    grub = {
+      enable = true;
+      efiDirectories = ["/boot/efi"];
+    };
     raid = {
       enable = true;
-      efiMdUuid = "157660cb:85532742:c1a1af01:b6df6973";
       rootMdUuid = "2a4d8a6f:3c6b02d7:3f22d8e0:3b2b18bd";
     };
   };

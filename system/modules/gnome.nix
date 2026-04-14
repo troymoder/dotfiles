@@ -22,7 +22,7 @@ in {
     };
 
     autoLoginUser = lib.mkOption {
-      type = lib.types.str;
+      type = lib.types.nullOr lib.types.str;
       default = null;
       description = "Enable autologin";
     };
@@ -34,7 +34,7 @@ in {
       excludePackages = [pkgs.xterm];
     };
 
-    services.displayManager.autoLogin.user = cfg.autoLoginUser;
+    services.displayManager.autoLogin.user = lib.mkIf (cfg.autoLoginUser != null) cfg.autoLoginUser;
 
     services.displayManager.gdm = {
       enable = true;

@@ -3,24 +3,15 @@
   variables,
   ...
 }: {
+  imports = [
+    ./presets/desktop.nix
+  ];
+
   modules = {
-    audio.enable = true;
-    bluetooth.enable = true;
-    dns.enable = true;
-    docker.enable = true;
-    fingerprint.enable = true;
     gnome = {
-      enable = true;
       autoLoginUser = variables.username;
     };
-    home-manager.enable = true;
-    networking.enable = true;
-    plymouth.enable = true;
-    printing.enable = true;
-    swap.enable = true;
-    tailscale.enable = true;
     nvidia.enable = true;
-    yubikey.enable = true;
     raid = {
       enable = true;
       rootMdUuid = "cb37143d:d9cb8ef8:f0081246:a0716c23";

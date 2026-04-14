@@ -4,15 +4,13 @@
   ...
 }: {
   imports = [
+    ./presets/server.nix
     "${modulesPath}/profiles/qemu-guest.nix"
   ];
 
-  modules = {
-    dns.enable = true;
-    home-manager.enable = true;
-    networking.enable = true;
+  boot.loader = {
     systemd-boot.enable = true;
-    tailscale.enable = true;
+    efi.canTouchEfiVariables = true;
   };
 
   boot.initrd.availableKernelModules = ["ahci" "xhci_pci" "virtio_pci" "virtio_scsi" "sd_mod" "sr_mod"];
