@@ -51,7 +51,8 @@ in {
         iftop
         iotop
         strace
-        ltrace
+        # Test suite fails under the nix sandbox (ptrace); binary builds fine.
+        (ltrace.overrideAttrs (_: {doCheck = false;}))
         lsof
         ethtool
         pciutils

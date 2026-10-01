@@ -13,6 +13,6 @@ in {
   config = lib.mkIf cfg.enable {
     services.pcscd.enable = true;
     services.udev.packages = [pkgs.yubikey-personalization];
-    services.dbus.packages = [pkgs.gcr];
+    services.dbus.packages = [pkgs.gcr_4];
   };
 }

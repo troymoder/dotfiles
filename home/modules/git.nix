@@ -6,6 +6,9 @@
   ...
 }: let
   cfg = config.modules.git;
+
+  # Test suite aborts with heap corruption in the nix sandbox; binary builds fine.
+  mergiraf = pkgs.mergiraf.overrideAttrs (_: {doCheck = false;});
 in {
   options.modules.git = {
     enable = lib.mkEnableOption "Git configuration";
@@ -38,7 +41,7 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = with pkgs; [gh mergiraf];
+    home.packages = [pkgs.gh mergiraf];
 
     home.file.".gitattributes".text = "";
 
@@ -63,7 +66,7 @@ in {
         merge.conflictStyle = "diff3";
         merge.mergiraf = {
           name = "mergiraf";
-          driver = "${pkgs.mergiraf}/bin/mergiraf merge --git %O %A %B -s %S -x %X -y %Y -p %P -l %L";
+          driver = "${mergiraf}/bin/mergiraf merge --git %O %A %B -s %S -x %X -y %Y -p %P -l %L";
         };
 
         core.attributesFile = "${config.home.homeDirectory}/.gitattributes";

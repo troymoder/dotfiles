@@ -19,16 +19,10 @@
 
     vscode-server = {
       url = "github:nix-community/nixos-vscode-server";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     nix-ld = {
       url = "github:Mic92/nix-ld";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
-    envfs = {
-      url = "github:Mic92/envfs";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -72,7 +66,6 @@
     alejandra,
     vscode-server,
     nix-ld,
-    envfs,
     nix-your-shell,
     nix-index-database,
     technorino,
@@ -144,10 +137,9 @@
                 doInstallCheck = false;
               }));
 
-              fileSystems."/bin".fsType = "none";
+              services.envfs.enable = true;
             })
             nix-ld.nixosModules.nix-ld
-            envfs.nixosModules.envfs
             home-manager.nixosModules.home-manager
             nix-index-database.nixosModules.default
             vscode-server.nixosModules.default

@@ -8,6 +8,9 @@
   cfg = config.modules.gnome-desktop;
   inherit (lib.hm.gvariant) mkArray mkUint32 mkTuple type;
 
+  # Vendored from nixpkgs (removed upstream).
+  nightfox-gtk-theme = pkgs.callPackage ./nightfox-gtk-theme/package.nix {};
+
   # Single source of truth for GNOME shell extensions.
   # Add or remove an extension here and it will automatically be:
   #   - installed into home.packages
@@ -421,8 +424,8 @@ in {
       };
 
       "org/freedesktop/Tracker3/Miner/Files" = {
-        ignored-directories = [ "target" "node_modules" ".git" "result" ".direnv" "po" "CVS" "build" ".cache" ];
-        throttle = 0;  # stop the battery-pause thrash
+        ignored-directories = ["target" "node_modules" ".git" "result" ".direnv" "po" "CVS" "build" ".cache"];
+        throttle = 0; # stop the battery-pause thrash
       };
     };
   };

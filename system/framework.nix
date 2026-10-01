@@ -50,11 +50,6 @@ in {
 
   programs.steam.enable = true;
 
-  services.ollama = {
-    enable = true;
-    package = pkgs.ollama-cuda;
-  };
-
   boot.initrd.services.lvm.enable = true;
   boot.initrd.luks.devices.cryptroot = {
     device = "/dev/md0";
@@ -72,7 +67,6 @@ in {
   boot.loader.systemd-boot.enable = lib.mkForce false;
   boot.loader.efi.canTouchEfiVariables = true;
   boot.loader.efi.efiSysMountPoint = "/boot/efi1";
-  boot.loader.systemd-boot.configurationLimit = 8;
   boot.initrd.systemd.enable = true;
   boot.lanzaboote = {
     enable = true;
@@ -80,6 +74,7 @@ in {
     extraEfiSysMountPoints = [
       "/boot/efi2"
     ];
+    configurationLimit = 4;
     measuredBoot = {
       enable = true;
       pcrs = [

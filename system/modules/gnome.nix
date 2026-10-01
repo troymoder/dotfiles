@@ -51,6 +51,35 @@ in {
     services.gnome.gnome-keyring.enable = true;
     security.pam.services.gdm.enableGnomeKeyring = false;
 
+    # GDM 50.2's pam_gdm rejects the LUKS passphrase that systemd-cryptsetup
+    # caches in the kernel keyring (systemd omits the trailing NUL, pam_gdm now
+    # requires it), so the login keyring stopped auto-unlocking on autologin.
+    # systemd's own module reads the same key correctly.
+    security.pam.services.gdm-autologin.rules.auth.gdm.modulePath =
+      lib.mkForce "${config.systemd.package}/lib/security/pam_systemd_loadkey.so";
+    security.pam.services.gdm-fingerprint.rules.auth.gdm.modulePath =
+      lib.mkIf config.services.fprintd.enable
+      (lib.mkForce "${config.systemd.package}/lib/security/pam_systemd_loadkey.so");
+
+    # Broad font coverage so Chromium and other apps can render
+    # non-Latin scripts (CJK, Arabic, Hebrew, Thai, emoji, ...).
+    fonts = {
+      enableDefaultPackages = true;
+      packages = with pkgs; [
+        nerd-fonts.jetbrains-mono
+        # CJK and emoji coverage that Nerd Fonts don't provide.
+        noto-fonts-cjk-sans
+        noto-fonts-cjk-serif
+        noto-fonts-color-emoji
+      ];
+      fontconfig.defaultFonts = {
+        sansSerif = ["Noto Sans CJK SC"];
+        serif = ["Noto Serif CJK SC"];
+        monospace = ["JetBrainsMono Nerd Font" "Noto Sans Mono CJK SC"];
+        emoji = ["Noto Color Emoji"];
+      };
+    };
+
     environment = {
       sessionVariables = lib.mkMerge [
         {
