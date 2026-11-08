@@ -1,4 +1,3 @@
-# Example: what hetznerVpn.nix looks like now
 {...}: {
   imports = [
     ./profiles/base.nix

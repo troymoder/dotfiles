@@ -7,33 +7,10 @@
   ...
 }: let
   cfg = config.modules.home-manager;
+  inherit (variables) username;
 in {
   options.modules.home-manager = {
     enable = lib.mkEnableOption "Enable home-manager";
-
-    username = lib.mkOption {
-      type = lib.types.str;
-      default = variables.username;
-      description = "Username of the user account";
-    };
-
-    profilePicture = lib.mkOption {
-      type = lib.types.path;
-      default = variables.profilePicture;
-      description = "Profile picture of the account";
-    };
-
-    sshKeyPub = lib.mkOption {
-      type = lib.types.str;
-      default = variables.sshKeyPub;
-      description = "Public SSH Key";
-    };
-
-    groups = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      default = ["wheel" "networkmanager"];
-      description = "Extra groups for the user";
-    };
 
     extraGroups = lib.mkOption {
       type = lib.types.listOf lib.types.str;
@@ -43,27 +20,25 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
-    home-manager.users.${cfg.username} = import ../../home/${buildName}.nix;
+    home-manager.users.${username} = import ../../home/${buildName}.nix;
 
-    users.users.${cfg.username} = {
+    users.users.${username} = {
       isNormalUser = true;
-      extraGroups = cfg.groups ++ cfg.extraGroups;
-      openssh.authorizedKeys.keys = lib.mkIf (cfg.sshKeyPub != "") [
-        cfg.sshKeyPub
-      ];
+      extraGroups = ["wheel" "networkmanager"] ++ cfg.extraGroups;
+      openssh.authorizedKeys.keys = [variables.sshKeyPub];
       shell = pkgs.bash;
     };
 
     system.activationScripts.userIcon = ''
       mkdir -p /var/lib/AccountsService/{icons,users}
-      cp ${cfg.profilePicture} /var/lib/AccountsService/icons/${cfg.username}
-      chmod 0644 /var/lib/AccountsService/icons/${cfg.username}
+      cp ${variables.profilePicture} /var/lib/AccountsService/icons/${username}
+      chmod 0644 /var/lib/AccountsService/icons/${username}
 
-      cat > /var/lib/AccountsService/users/${cfg.username} <<EOF
+      cat > /var/lib/AccountsService/users/${username} <<EOT
       [User]
-      Icon=/var/lib/AccountsService/icons/${cfg.username}
+      Icon=/var/lib/AccountsService/icons/${username}
       SystemAccount=false
-      EOF
+      EOT
     '';
   };
 }

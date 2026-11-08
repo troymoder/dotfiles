@@ -6,6 +6,10 @@
   ...
 }: let
   cfg = config.modules.gnome-desktop;
+  theme = "Nightfox-Dark";
+  iconTheme = "Papirus-Dark";
+  browser = "chromium";
+  wallpaper = "file://${variables.wallpaper}";
   inherit (lib.hm.gvariant) mkArray mkUint32 mkTuple type;
 
   # Vendored from nixpkgs (removed upstream).
@@ -32,30 +36,6 @@
 in {
   options.modules.gnome-desktop = {
     enable = lib.mkEnableOption "GNOME desktop home config";
-
-    theme = lib.mkOption {
-      type = lib.types.str;
-      default = "Nightfox-Dark";
-      description = "GTK and GNOME shell theme name";
-    };
-
-    iconTheme = lib.mkOption {
-      type = lib.types.str;
-      default = "Papirus-Dark";
-      description = "Icon theme name";
-    };
-
-    browser = lib.mkOption {
-      type = lib.types.str;
-      default = "chromium";
-      description = "Default browser desktop file name (without .desktop)";
-    };
-
-    wallpaper = lib.mkOption {
-      type = lib.types.path;
-      default = variables.wallpaper;
-      description = "Wallpaper file to use";
-    };
 
     extraPackages = lib.mkOption {
       type = lib.types.listOf lib.types.package;
@@ -95,15 +75,15 @@ in {
 
     gtk = {
       enable = true;
-      theme.name = cfg.theme;
+      theme.name = theme;
     };
 
     xdg.mimeApps = {
       enable = true;
       defaultApplications = {
-        "text/html" = "${cfg.browser}.desktop";
-        "x-scheme-handler/http" = "${cfg.browser}.desktop";
-        "x-scheme-handler/https" = "${cfg.browser}.desktop";
+        "text/html" = "${browser}.desktop";
+        "x-scheme-handler/http" = "${browser}.desktop";
+        "x-scheme-handler/https" = "${browser}.desktop";
       };
     };
 
@@ -114,8 +94,8 @@ in {
     dconf.settings = {
       ## --- Background -------------------------------------------------------
       "org/gnome/desktop/background" = {
-        picture-uri = "file://${cfg.wallpaper}";
-        picture-uri-dark = "file://${cfg.wallpaper}";
+        picture-uri = wallpaper;
+        picture-uri-dark = wallpaper;
         picture-options = "zoom";
         primary-color = "#000000";
         secondary-color = "#000000";
@@ -123,7 +103,7 @@ in {
 
       ## --- Lock screen background ------------------------------------------
       "org/gnome/desktop/screensaver" = {
-        picture-uri = "file://${cfg.wallpaper}";
+        picture-uri = wallpaper;
         picture-options = "zoom";
         primary-color = "#000000";
       };
@@ -135,7 +115,7 @@ in {
       };
 
       "org/gnome/desktop/wm/preferences" = {
-        theme = cfg.theme;
+        theme = theme;
         button-layout = ":minimize,maximize,close";
         resize-with-right-button = false;
       };
@@ -153,8 +133,8 @@ in {
 
       ## --- Interface / appearance -------------------------------------------
       "org/gnome/desktop/interface" = {
-        icon-theme = cfg.iconTheme;
-        gtk-theme = cfg.theme;
+        icon-theme = iconTheme;
+        gtk-theme = theme;
         color-scheme = "prefer-dark";
         accent-color = "teal";
         enable-animations = true;
@@ -166,7 +146,7 @@ in {
       };
 
       "org/gnome/desktop/calendar".show-weekdate = false;
-      "org/gnome/shell/extensions/user-theme".name = cfg.theme;
+      "org/gnome/shell/extensions/user-theme".name = theme;
 
       ## --- Default apps -----------------------------------------------------
       "org/gnome/desktop/default-applications/terminal" = {
@@ -187,14 +167,10 @@ in {
       "org/gnome/desktop/notifications".show-banners = true;
 
       ## --- Search -----------------------------------------------------------
-      "org/gnome/desktop/search-providers" = {
-        disabled = ["org.gnome.Epiphany.desktop"];
-        sort-order = [
-          "org.gnome.Settings.desktop"
-          "org.gnome.Contacts.desktop"
-          "org.gnome.Nautilus.desktop"
-        ];
-      };
+      "org/gnome/desktop/search-providers".sort-order = [
+        "org.gnome.Settings.desktop"
+        "org.gnome.Nautilus.desktop"
+      ];
 
       ## --- Session / power --------------------------------------------------
       "org/gnome/desktop/session".idle-delay = mkUint32 0;
@@ -237,9 +213,6 @@ in {
         migrated-gtk-settings = true;
       };
 
-      ## --- Epiphany ---------------------------------------------------------
-      "org/gnome/epiphany".ask-for-default = false;
-
       ## --- Tweaks -----------------------------------------------------------
       "org/gnome/tweaks".show-extensions-notice = false;
 
@@ -270,17 +243,6 @@ in {
         sigma = 30;
       };
 
-      "org/gnome/shell/extensions/blur-my-shell/dash-to-dock" = {
-        blur = true;
-        brightness = 0.6;
-        sigma = 30;
-        static-blur = true;
-        style-dash-to-dock = 0;
-        pipeline = "pipeline_default_rounded";
-      };
-
-      "org/gnome/shell/extensions/blur-my-shell/dash-to-panel".blur-original-panel = true;
-
       "org/gnome/shell/extensions/blur-my-shell/panel" = {
         blur = false;
         brightness = 0.6;
@@ -291,15 +253,9 @@ in {
         pipeline = "pipeline_default";
       };
 
-      "org/gnome/shell/extensions/blur-my-shell/window-list" = {
-        brightness = 0.6;
-        sigma = 30;
-      };
-
       "org/gnome/shell/extensions/blur-my-shell/overview".pipeline = "pipeline_default";
       "org/gnome/shell/extensions/blur-my-shell/lockscreen".pipeline = "pipeline_default";
       "org/gnome/shell/extensions/blur-my-shell/screenshot".pipeline = "pipeline_default";
-      "org/gnome/shell/extensions/blur-my-shell/coverflow-alt-tab".pipeline = "pipeline_default";
 
       ## --- Do Not Disturb While Screen Sharing ------------------------------
       "org/gnome/shell/extensions/do-not-disturb-while-screen-sharing-or-recording".is-wayland = true;

@@ -14,7 +14,8 @@
     };
 
     hardware.enableAllFirmware = lib.mkDefault true;
-    boot.kernelPackages = lib.mkDefault pkgs.linuxPackages_latest;
+    # Below mkDefault so hardware modules (e.g. x1e-nixos-config) can set their own.
+    boot.kernelPackages = lib.mkOverride 1001 pkgs.linuxPackages_latest;
 
     environment.systemPackages = with pkgs; [
       (writeShellScriptBin "nixos-rebuild-flake" ''

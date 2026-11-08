@@ -17,7 +17,6 @@ in {
       interactiveShellInit = ''
         set fish_greeting
         export SHELL="${pkgs.fish}/bin/fish"
-        ${pkgs.nix-your-shell}/bin/nix-your-shell fish --info-right | source
       '';
 
       shellAliases = {
@@ -25,8 +24,8 @@ in {
         gs = "git status";
         gd = "git diff";
         gl = "git lg";
-        vim = "hx";
-        vi = "hx";
+        vim = "nvim";
+        vi = "nvim";
         ls = "eza";
         cat = "bat";
         ".." = "cd ..";

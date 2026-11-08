@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  pkgs,
   ...
 }: let
   cfg = config.modules.vscode-server;
@@ -14,6 +15,7 @@ in {
       enable = true;
       enableFHS = true;
       installPath = ["$HOME/.vscode-server"];
+      nodejsPackage = pkgs.nodejs;
     };
   };
 }

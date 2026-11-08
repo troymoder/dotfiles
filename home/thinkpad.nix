@@ -1,4 +1,3 @@
-# Example: what framework.nix looks like now
 {
   pkgs,
   technorino,

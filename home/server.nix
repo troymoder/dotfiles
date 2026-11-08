@@ -1,4 +1,3 @@
-# Example: what server.nix looks like now
 {pkgs, ...}: {
   imports = [
     ./profiles/base.nix

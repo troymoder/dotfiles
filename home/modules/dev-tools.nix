@@ -48,7 +48,7 @@ in {
 
   config = lib.mkIf cfg.enable {
     home.packages = with pkgs;
-      [neovim gcc15]
+      [gcc16]
       ++ lib.optionals cfg.rust [rustup]
       ++ lib.optionals cfg.python [uv]
       ++ lib.optionals cfg.go [go]

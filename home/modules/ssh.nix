@@ -2,32 +2,12 @@
   pkgs,
   config,
   lib,
-  variables,
   ...
 }: let
   cfg = config.modules.ssh;
-  gnomeDesktopEnabled = (config.modules ? gnome-desktop) && (config.modules.gnome-desktop.enable or false);
-  pinentryPackage =
-    if cfg.pinentryPackage != null
-    then cfg.pinentryPackage
-    else if gnomeDesktopEnabled
-    then pkgs.pinentry-gnome3
-    else pkgs.pinentry-curses;
 in {
   options.modules.ssh = {
     enable = lib.mkEnableOption "SSH client config";
-
-    forwardAgent = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Forward SSH agent to remote hosts";
-    };
-
-    pinentryPackage = lib.mkOption {
-      type = lib.types.nullOr lib.types.package;
-      default = null;
-      description = "Pinentry package for gpg-agent (auto: gnome3 on desktop, curses on headless hosts)";
-    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -35,7 +15,7 @@ in {
       enable = true;
       enableDefaultConfig = false;
       settings."*" = {
-        ForwardAgent = cfg.forwardAgent;
+        ForwardAgent = true;
         AddKeysToAgent = "yes";
       };
     };
@@ -59,7 +39,11 @@ in {
       grabKeyboardAndMouse = false;
       enableSshSupport = true;
       enableScDaemon = true;
-      pinentry.package = pinentryPackage;
+      # gnome3 pinentry on desktops, curses on headless hosts
+      pinentry.package =
+        if config.modules.gnome-desktop.enable
+        then pkgs.pinentry-gnome3
+        else pkgs.pinentry-curses;
       defaultCacheTtl = 34560000;
       maxCacheTtl = 34560000;
       defaultCacheTtlSsh = 34560000;

@@ -17,8 +17,6 @@
     };
   };
 
-  services.fwupd.enable = true;
-
   # Special service for disabling audio compressors
   systemd.user.services.disable-audio-compressors = {
     description = "Disable audio compressors";

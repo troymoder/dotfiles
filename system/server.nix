@@ -37,7 +37,6 @@
     };
     kernelModules = ["kvm-amd"];
     kernelParams = ["transparent_hugepage=madvise"];
-    supportedFilesystems = ["xfs" "fat32"];
   };
 
   # CPU

@@ -6,12 +6,12 @@
 }: let
   fw16-kbd-uleds = pkgs.stdenv.mkDerivation {
     pname = "fw16-kbd-uleds";
-    version = "master";
+    version = "0-unstable-2026-01";
 
     src = pkgs.fetchFromGitHub {
       owner = "paco3346";
       repo = "fw16-kbd-uleds";
-      rev = "master";
+      rev = "51af3af4b857edb73117898369fe4658d0113703";
       hash = "sha256-1mPZl5q3/pOXEE/yO1EngrL+CYtmoZ1aTNOIpvRgmsU=";
     };
 
@@ -19,6 +19,8 @@
     buildInputs = [pkgs.systemd];
 
     installFlags = ["PREFIX=$(out)"];
+
+    patches = [./fw16-kbd-uleds/enable-rgb-matrix.patch];
 
     meta = with lib; {
       description = "FW16 keyboard backlight bridge exposing QMK modules as UPower kbd_backlight";
@@ -31,7 +33,7 @@
   cfg = config.modules.fw16-kbd-uleds;
 in {
   options.modules.fw16-kbd-uleds = {
-    enable = lib.mkEnableOption "GNOME desktop environment";
+    enable = lib.mkEnableOption "Framework 16 keyboard backlight bridge";
   };
 
   config = lib.mkIf cfg.enable {

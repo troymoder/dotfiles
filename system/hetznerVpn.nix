@@ -1,8 +1,4 @@
-{
-  modulesPath,
-  lib,
-  ...
-}: {
+{modulesPath, ...}: {
   imports = [
     ./presets/server.nix
     "${modulesPath}/profiles/qemu-guest.nix"
@@ -14,7 +10,6 @@
   };
 
   boot.initrd.availableKernelModules = ["ahci" "xhci_pci" "virtio_pci" "virtio_scsi" "sd_mod" "sr_mod"];
-  nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
 
   fileSystems."/" = {
     device = "/dev/disk/by-uuid/f755e68f-b67f-4f90-b54c-fee08b09348a";

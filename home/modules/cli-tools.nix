@@ -8,71 +8,60 @@
 in {
   options.modules.cli-tools = {
     enable = lib.mkEnableOption "common CLI tools";
-
-    extraPackages = lib.mkOption {
-      type = lib.types.listOf lib.types.package;
-      default = [];
-      description = "Additional CLI packages to install";
-    };
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = with pkgs;
-      [
-        # System monitoring
-        htop
-        btop
+    home.packages = with pkgs; [
+      # Editor
+      neovim
 
-        # Modern replacements
-        eza
-        bat
-        ripgrep
-        fd
+      # System monitoring
+      htop
+      btop
 
-        # CLI tools
-        fzf
-        jq
-        tree
-        wget
-        curl
-        file
-        which
-        gnupg
+      # Modern replacements
+      eza
+      bat
+      ripgrep
+      fd
 
-        # Archive tools
-        unzip
-        zip
-        xz
-        zstd
-        gzip
+      # CLI tools
+      fzf
+      jq
+      tree
+      wget
+      curl
+      file
+      which
+      gnupg
 
-        # System tools
-        iperf3
-        iftop
-        iotop
-        strace
-        # Test suite fails under the nix sandbox (ptrace); binary builds fine.
-        (ltrace.overrideAttrs (_: {doCheck = false;}))
-        lsof
-        ethtool
-        pciutils
-        usbutils
-        dig
+      # Archive tools
+      unzip
+      zip
+      xz
+      zstd
+      gzip
 
-        # Shell helpers
-        direnv
-        nix-your-shell
+      # System tools
+      iperf3
+      iftop
+      iotop
+      strace
+      # Test suite fails under the nix sandbox (ptrace); binary builds fine.
+      (ltrace.overrideAttrs (_: {doCheck = false;}))
+      lsof
+      ethtool
+      pciutils
+      usbutils
+      dig
 
-        # System info
-        fastfetch
-        hyfetch
-        evil-helix
-      ]
-      ++ cfg.extraPackages;
+      # System info
+      fastfetch
+    ];
 
     home.sessionVariables = {
-      EDITOR = "hx";
-      VISUAL = "hx";
+      EDITOR = "nvim";
+      VISUAL = "nvim";
     };
 
     programs.nix-index.enable = true;

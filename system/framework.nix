@@ -3,39 +3,13 @@
   variables,
   lib,
   ...
-}: let
-  fw16-kbd-uleds = pkgs.stdenv.mkDerivation {
-    pname = "fw16-kbd-uleds";
-    version = "master";
-
-    src = pkgs.fetchFromGitHub {
-      owner = "paco3346";
-      repo = "fw16-kbd-uleds";
-      rev = "master";
-      hash = "sha256-1mPZl5q3/pOXEE/yO1EngrL+CYtmoZ1aTNOIpvRgmsU=";
-    };
-
-    nativeBuildInputs = [pkgs.pkg-config];
-    buildInputs = [pkgs.systemd];
-
-    installFlags = ["PREFIX=$(out)"];
-
-    meta = with lib; {
-      description = "FW16 keyboard backlight bridge exposing QMK modules as UPower kbd_backlight";
-      homepage = "https://github.com/paco3346/fw16-kbd-uleds";
-      license = licenses.mit;
-      platforms = platforms.linux;
-    };
-  };
-in {
+}: {
   imports = [
     ./presets/desktop.nix
   ];
 
   modules = {
-    gnome = {
-      autoLoginUser = variables.username;
-    };
+    desktop.autoLoginUser = variables.username;
     nvidia.enable = true;
     raid = {
       enable = true;
@@ -43,12 +17,32 @@ in {
     };
     fw16-kbd-uleds.enable = true;
     home-manager.extraGroups = ["plugdev"];
+    dns.enable = false;
   };
+
+  # fwupd's synaptics_cape plugin probes the Audio Expansion Card (32ac:0010) over HID
+  # to read its firmware version; the card's firmware does not answer and hangs until
+  # power-cycled (kernel logs "cannot get freq ... err -110"). No LVFS firmware exists
+  # for the card, so disabling the plugin loses nothing.
+  services.fwupd.daemonSettings.DisabledPlugins = ["synaptics_cape"];
 
   services.colord.enable = true;
   environment.etc."color/icc/BOE_CQ_______NE160QDM_NZ6.icc".source = ../static/BOE_CQ_______NE160QDM_NZ6.icc;
 
-  programs.steam.enable = true;
+  programs.steam = {
+    enable = true;
+    # Steam passes its environment to every game it launches, so re-expose the
+    # NVIDIA Vulkan ICD (hidden session-wide by modules/nvidia.nix) and pin
+    # Vulkan to the dGPU here. GL is left alone so the Steam client itself keeps
+    # rendering on the iGPU; native OpenGL games can use `nvidia-offload %command%`.
+    package = pkgs.steam.override {
+      extraProfile = ''
+        unset VK_LOADER_DRIVERS_DISABLE
+        export __NV_PRIME_RENDER_OFFLOAD=1
+        export __VK_LAYER_NV_optimus=NVIDIA_only
+      '';
+    };
+  };
 
   boot.initrd.services.lvm.enable = true;
   boot.initrd.luks.devices.cryptroot = {
@@ -67,7 +61,6 @@ in {
   boot.loader.systemd-boot.enable = lib.mkForce false;
   boot.loader.efi.canTouchEfiVariables = true;
   boot.loader.efi.efiSysMountPoint = "/boot/efi1";
-  boot.initrd.systemd.enable = true;
   boot.lanzaboote = {
     enable = true;
     pkiBundle = "/var/lib/sbctl";

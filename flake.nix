@@ -12,23 +12,8 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    alejandra = {
-      url = "github:kamadorueda/alejandra";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     vscode-server = {
       url = "github:nix-community/nixos-vscode-server";
-    };
-
-    nix-ld = {
-      url = "github:Mic92/nix-ld";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
-    nix-your-shell = {
-      url = "github:TroyKomodo/nix-your-shell/0c45887935c3507b2ab00b64dac61311fac01d4f";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     nix-index-database = {
@@ -39,17 +24,6 @@
     technorino = {
       url = "git+https://github.com/2547techno/technorino?submodules=1";
       inputs.nixpkgs.follows = "nixpkgs";
-    };
-
-    lix = {
-      url = "github:lix-project/lix";
-      flake = false;
-    };
-
-    lix-module = {
-      url = "git+https://git.lix.systems/lix-project/nixos-module";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.lix.follows = "lix";
     };
 
     lanzaboote = {
@@ -63,13 +37,9 @@
     nixpkgs,
     x1e-nixos-config,
     home-manager,
-    alejandra,
     vscode-server,
-    nix-ld,
-    nix-your-shell,
     nix-index-database,
     technorino,
-    lix-module,
     lanzaboote,
     ...
   }: let
@@ -84,7 +54,6 @@
         inherit system;
         config.allowUnfree = true;
         overlays = [
-          nix-your-shell.overlays.default
           (final: prev: {
             # Patch open-bar to declare GNOME 50 support (neuromorph/openbar#165).
             gnomeExtensions =
@@ -125,25 +94,15 @@
         };
         modules =
           [
-            lix-module.nixosModules.default
-            ({
-              pkgs,
-              lib,
-              config,
-              ...
-            }: {
-              nix.package = lib.mkForce (pkgs.lix.overrideAttrs (old: {
-                doCheck = false;
-                doInstallCheck = false;
-              }));
+            ({pkgs, ...}: {
+              nix.package = pkgs.lix;
 
               services.envfs.enable = true;
+              programs.nix-ld.enable = true;
             })
-            nix-ld.nixosModules.nix-ld
             home-manager.nixosModules.home-manager
             nix-index-database.nixosModules.default
             vscode-server.nixosModules.default
-            x1e-nixos-config.nixosModules.x1e
             lanzaboote.nixosModules.lanzaboote
             {
               home-manager.useGlobalPkgs = true;
@@ -167,6 +126,7 @@
       thinkpad = mkSystem {
         buildName = "thinkpad";
         system = "aarch64-linux";
+        extraModules = [x1e-nixos-config.nixosModules.x1e];
       };
       framework = mkSystem {
         buildName = "framework";
@@ -199,6 +159,6 @@
     };
 
     packages.x86_64-linux.iso = self.nixosConfigurations.liveIso.config.system.build.isoImage;
-    formatter = alejandra.defaultPackage;
+    formatter = nixpkgs.lib.genAttrs ["x86_64-linux" "aarch64-linux"] (s: nixpkgs.legacyPackages.${s}.alejandra);
   };
 }

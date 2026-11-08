@@ -1,0 +1,34 @@
+--- a/fw16-kbd-uleds.c	2026-11-08 04:34:30.472499464 +0200
++++ b/fw16-kbd-uleds.c	2026-11-08 04:34:30.477499354 +0200
+@@ -61,6 +61,7 @@
+ #define QMK_CH_BACKLIGHT 0x01
+ #define QMK_CH_RGB_MATRIX 0x03
+ #define QMK_ADDR_BRIGHTNESS 0x01
++#define QMK_ADDR_EFFECT 0x02
+ 
+ /* -------------------- Debug -------------------- */
+ 
+@@ -179,13 +180,22 @@
+     }
+     close(fd);
+ 
+-    if (r[0] != cmd) return -1;
++    // Responses are broadcast to every hidraw reader, so make sure this one is ours.
++    if (r[0] != cmd || r[1] != channel || r[2] != addr) return -1;
+     if (resp) *resp = r[3];
+     return 0;
+ }
+ 
+ static int qmk_set(const target_t *t, unsigned pct) {
+     unsigned char val = (unsigned char)((pct * 255 + 50) / 100);
++    // QMK silently ignores rgb_matrix brightness writes while the matrix is disabled
++    // (effect 0), which is how the Framework 16 keyboard ends up stuck. Turn it on
++    // (effect 1 = solid colour) before asking for a visible brightness.
++    if (pct > 0) {
++        unsigned char eff = 0;
++        if (qmk_hidraw_xfer(t->hidraw, QMK_CMD_GET_VALUE, QMK_CH_RGB_MATRIX, QMK_ADDR_EFFECT, 0, &eff) == 0 && eff == 0)
++            (void)qmk_hidraw_xfer(t->hidraw, QMK_CMD_SET_VALUE, QMK_CH_RGB_MATRIX, QMK_ADDR_EFFECT, 1, NULL);
++    }
+     // Try both white backlight and RGB matrix
+     int r1 = qmk_hidraw_xfer(t->hidraw, QMK_CMD_SET_VALUE, QMK_CH_BACKLIGHT, QMK_ADDR_BRIGHTNESS, val, NULL);
+     int r2 = qmk_hidraw_xfer(t->hidraw, QMK_CMD_SET_VALUE, QMK_CH_RGB_MATRIX, QMK_ADDR_BRIGHTNESS, val, NULL);

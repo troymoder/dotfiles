@@ -17,7 +17,5 @@ in {
 
     boot.kernelParams = ["quiet" "splash" "loglevel=3" "rd.udev.log_level=3"];
     boot.consoleLogLevel = 0;
-    boot.initrd.verbose = false;
-    boot.initrd.systemd.enable = true;
   };
 }

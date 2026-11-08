@@ -12,32 +12,6 @@
 in {
   options.modules.git = {
     enable = lib.mkEnableOption "Git configuration";
-
-    fullName = lib.mkOption {
-      type = lib.types.str;
-      description = "Git user name";
-      default = variables.git.fullName;
-    };
-
-    userEmail = lib.mkOption {
-      type = lib.types.str;
-      description = "Git user email";
-      default = variables.git.email;
-    };
-
-    signing = {
-      enable = lib.mkOption {
-        type = lib.types.bool;
-        default = true;
-        description = "Enable SSH-based commit signing";
-      };
-
-      key = lib.mkOption {
-        type = lib.types.str;
-        description = "SSH Signing Key path";
-        default = variables.sshKeyPub;
-      };
-    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -49,19 +23,19 @@ in {
       enable = true;
       settings = {
         user = {
-          name = cfg.fullName;
-          email = cfg.userEmail;
+          name = variables.git.fullName;
+          email = variables.git.email;
+          signingkey = variables.sshKeyPub;
         };
 
-        url."git@github.com:".insteadOf = "https://github.com/";
+        url."git@github.com:".pushInsteadOf = "https://github.com/";
 
         push.autoSetupRemote = true;
         pull.rebase = false;
 
-        gpg.format = lib.mkIf cfg.signing.enable "ssh";
-        user.signingkey = lib.mkIf cfg.signing.enable cfg.signing.key;
-        commit.gpgsign = cfg.signing.enable;
-        tag.gpgsign = cfg.signing.enable;
+        gpg.format = "ssh";
+        commit.gpgsign = true;
+        tag.gpgsign = true;
 
         merge.conflictStyle = "diff3";
         merge.mergiraf = {
