@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=dev.troy.Cabin
+Exec=@bindir@/cabind
+SystemdService=cabind.service

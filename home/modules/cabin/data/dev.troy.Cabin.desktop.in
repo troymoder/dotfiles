@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Quick Settings
+Comment=The status icons: network, Bluetooth, power, sound and the battery; the controls and audio panels under them
+Type=Application
+Exec=@bindir@/cabin-applet --kind status
+Terminal=false
+Categories=COSMIC;
+NoDisplay=true
+Icon=dev.troy.Cabin
+X-CosmicApplet=true
+X-HostWaylandDisplay=true

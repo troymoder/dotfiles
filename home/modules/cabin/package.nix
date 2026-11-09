@@ -1,0 +1,71 @@
+# Cabin: Troy's panels for COSMIC, one fixed layout, built from the crate
+# next to this file. cabind draws the panels; cabin-applet is the buttons
+# on the panel; cabinctl drives them from a shell.
+{
+  lib,
+  rustPlatform,
+  libcosmicAppHook,
+  pipewire,
+  wireplumber,
+  pulseaudio,
+  curl,
+  pciutils,
+  cantarell-fonts,
+  fetchFromGitHub,
+}:
+let
+  # Tabler Icons, the outline set, embedded by name at build time.
+  tabler-icons = fetchFromGitHub {
+    owner = "tabler";
+    repo = "tabler-icons";
+    rev = "v3.51.0";
+    hash = "sha256-DouIBFdzy/ENlzSCiMkn1iYakO6i66IvKEuTwm4vWRQ=";
+  };
+in
+rustPlatform.buildRustPackage {
+  pname = "cabin";
+  version = "0.1.0";
+
+  src = lib.cleanSourceWith {
+    src = ./.;
+    filter = path: _type: let
+      name = baseNameOf path;
+    in
+      name != "target" && name != ".dev" && name != "package.nix" && !(lib.hasPrefix "run-dev" name) && name != "reload-dev.sh";
+  };
+
+  cargoLock = {
+    lockFile = ./Cargo.lock;
+    allowBuiltinFetchGit = true;
+  };
+
+  nativeBuildInputs = [libcosmicAppHook];
+
+  # The tests want the dev loop (a camera, the session bus): the package just builds.
+  doCheck = false;
+
+  TABLER_ICONS_DIR = "${tabler-icons}/icons/outline";
+
+  # It shells out to these for sound and cover art.
+  preFixup = ''
+    libcosmicAppWrapperArgs+=(--prefix PATH : ${lib.makeBinPath [pipewire wireplumber pulseaudio curl pciutils]})
+    libcosmicAppWrapperArgs+=(--set QS_FONT_DIR ${cantarell-fonts}/share/fonts)
+  '';
+
+  postInstall = ''
+    mkdir -p $out/share/applications $out/share/dbus-1/services
+    for id in dev.troy.Cabin dev.troy.Cabin.Clock dev.troy.Cabin.System dev.troy.Cabin.Workspaces; do
+      sed "s|@bindir@|$out/bin|" data/$id.desktop.in > $out/share/applications/$id.desktop
+    done
+    # Started on the first call if the session hasn't started it yet.
+    sed "s|@bindir@|$out/bin|" data/dev.troy.Cabin.service.in > $out/share/dbus-1/services/dev.troy.Cabin.service
+    id=dev.troy.Cabin
+    install -Dm644 data/$id.svg $out/share/icons/hicolor/scalable/apps/$id.svg
+  '';
+
+  meta = {
+    description = "Troy's panels for COSMIC: quick settings, date menu, System monitor";
+    license = lib.licenses.gpl3Only;
+    mainProgram = "cabind";
+  };
+}

@@ -9,7 +9,7 @@
 in {
   options.modules.desktop = {
     sessions = lib.mkOption {
-      type = lib.types.listOf (lib.types.enum ["gnome"]);
+      type = lib.types.listOf (lib.types.enum ["cosmic"]);
       default = [];
       description = ''
         Desktop sessions to install. Every listed session is offered at the
@@ -25,7 +25,7 @@ in {
   };
 
   config = lib.mkIf (cfg.sessions != []) {
-    modules.gnome.enable = lib.mkIf (has "gnome") true;
+    modules.cosmic.enable = lib.mkIf (has "cosmic") true;
 
     services.displayManager.autoLogin.user = lib.mkIf (cfg.autoLoginUser != null) cfg.autoLoginUser;
 

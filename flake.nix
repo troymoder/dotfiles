@@ -30,6 +30,13 @@
       url = "github:nix-community/lanzaboote";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Night light for COSMIC until it has its own: a root helper writes the
+    # colour curve to the display (briefly taking the screen, hence a flicker).
+    cosmic-nightlight = {
+      url = "github:cosmic-nightlight/cosmic-nightlight/v0.6.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = {
@@ -41,6 +48,7 @@
     nix-index-database,
     technorino,
     lanzaboote,
+    cosmic-nightlight,
     ...
   }: let
     variables = import ./variables.nix;
@@ -55,23 +63,35 @@
         config.allowUnfree = true;
         overlays = [
           (final: prev: {
-            # Patch open-bar to declare GNOME 50 support (neuromorph/openbar#165).
-            gnomeExtensions =
-              prev.gnomeExtensions
-              // {
-                open-bar = prev.gnomeExtensions.open-bar.overrideAttrs (old: {
-                  patches =
-                    (old.patches or [])
-                    ++ [
-                      (final.fetchpatch {
-                        name = "openbar-gnome50.patch";
-                        url = "https://github.com/neuromorph/openbar/commit/c6722239f9e6d5b1118dc2ca91cd9c2874272a29.diff";
-                        stripLen = 1;
-                        hash = "sha256-AElMTjJkMpuXejrG/6sunKMROo9b4Fq/mOoM6aHrSd4=";
-                      })
-                    ];
-                });
+            # Keep a package but drop its .desktop files (CLI tools that ship launcher entries).
+            noDesktopEntry = pkg:
+              final.symlinkJoin {
+                name = "${pkg.name}-no-desktop";
+                paths = [pkg];
+                postBuild = "rm -rf $out/share/applications";
               };
+
+
+            # Launcher: drop the system76-power scripts (no such daemon here) and ship
+            # only the web search shortcuts in use.
+            pop-launcher = prev.pop-launcher.overrideAttrs (old: {
+              postInstall =
+                (old.postInstall or "")
+                + ''
+                  rm -r $out/share/pop-launcher/scripts/system76-power
+                  cp ${./system/launcher/web-shortcuts.ron} $out/share/pop-launcher/plugins/web/config.ron
+                '';
+            });
+
+            # Workspace overview: toggled quickly (Super held down, the panel dots
+            # clicked fast) it asked for a second screen capture while one was
+            # pending, which ends its Wayland connection, or hid surfaces whose GPU
+            # surface was still being set up, which panics in wgpu. The patch
+            # ignores toggles while a show or hide is under way and keeps one
+            # capture frame in flight per session.
+            cosmic-workspaces-epoch = prev.cosmic-workspaces-epoch.overrideAttrs (old: {
+              patches = (old.patches or []) ++ [./patches/cosmic-workspaces-fast-toggle.patch];
+            });
 
             sbctl = prev.sbctl.overrideAttrs (old: {
               version = "0.19-unstable-2026-xx-xx";
@@ -104,6 +124,7 @@
             nix-index-database.nixosModules.default
             vscode-server.nixosModules.default
             lanzaboote.nixosModules.lanzaboote
+            cosmic-nightlight.nixosModules.default
             {
               home-manager.useGlobalPkgs = true;
               home-manager.extraSpecialArgs = {

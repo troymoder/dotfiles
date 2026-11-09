@@ -5,7 +5,7 @@
     dns.enable = lib.mkDefault true;
     docker.enable = lib.mkDefault true;
     fingerprint.enable = lib.mkDefault true;
-    desktop.sessions = lib.mkDefault ["gnome"];
+    desktop.sessions = lib.mkDefault ["cosmic"];
     home-manager.enable = lib.mkDefault true;
     plymouth.enable = lib.mkDefault true;
     printing.enable = lib.mkDefault true;

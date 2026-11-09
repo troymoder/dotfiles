@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Workspaces
+Comment=A dot per workspace; click for the overview, scroll to switch
+Type=Application
+Exec=@bindir@/cabin-applet --kind workspaces
+Terminal=false
+Categories=COSMIC;
+NoDisplay=true
+Icon=dev.troy.Cabin
+X-CosmicApplet=true
+X-HostWaylandDisplay=true

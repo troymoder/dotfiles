@@ -13,11 +13,11 @@ in {
   config = lib.mkIf cfg.enable {
     home.packages = with pkgs; [
       # Editor
-      neovim
+      (noDesktopEntry neovim)
 
-      # System monitoring
-      htop
-      btop
+      # System monitoring (no launcher entries for terminal tools)
+      (noDesktopEntry htop)
+      (noDesktopEntry btop)
 
       # Modern replacements
       eza

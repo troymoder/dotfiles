@@ -1,5 +1,26 @@
 {
   "nodes": {
+    "cosmic-nightlight": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1793996673,
+        "narHash": "sha256-Q6UJDfNiscqlpnydq88UnMkvsoOLiQmtNEBnqBWcTA0=",
+        "owner": "cosmic-nightlight",
+        "repo": "cosmic-nightlight",
+        "rev": "42946032b548d3ff6d7525394291042f14e32c62",
+        "type": "github"
+      },
+      "original": {
+        "owner": "cosmic-nightlight",
+        "ref": "v0.6.0",
+        "repo": "cosmic-nightlight",
+        "type": "github"
+      }
+    },
     "crane": {
       "locked": {
         "lastModified": 1790899423,
@@ -167,6 +188,7 @@
     },
     "root": {
       "inputs": {
+        "cosmic-nightlight": "cosmic-nightlight",
         "home-manager": "home-manager",
         "lanzaboote": "lanzaboote",
         "nix-index-database": "nix-index-database",

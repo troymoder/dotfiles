@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Clock
+Comment=The date and time; notifications, calendar, weather and world clocks under it
+Type=Application
+Exec=@bindir@/cabin-applet --kind clock
+Terminal=false
+Categories=COSMIC;
+NoDisplay=true
+Icon=dev.troy.Cabin
+X-CosmicApplet=true
+X-NotificationsApplet=true
+X-HostWaylandDisplay=true

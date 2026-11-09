@@ -11,6 +11,13 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
+    # Wraps `nix-shell` and `nix develop` so they drop into fish, not bash,
+    # with build output piped through nix-output-monitor (also installs `nom`).
+    programs.nix-your-shell = {
+      enable = true;
+      nix-output-monitor.enable = true;
+    };
+
     programs.fish = {
       enable = true;
 
@@ -24,6 +31,8 @@ in {
         gs = "git status";
         gd = "git diff";
         gl = "git lg";
+        # nix-your-shell covers `nix build/shell/develop` and `nix-shell`.
+        nix-build = "nom-build";
         vim = "nvim";
         vi = "nvim";
         ls = "eza";

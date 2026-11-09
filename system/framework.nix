@@ -9,8 +9,11 @@
   ];
 
   modules = {
-    desktop.autoLoginUser = variables.username;
-    nvidia.enable = true;
+    desktop.sessions = ["cosmic"];
+    nvidia = {
+      enable = true;
+      switchable = true;
+    };
     raid = {
       enable = true;
       rootMdUuid = "cb37143d:d9cb8ef8:f0081246:a0716c23";
@@ -48,6 +51,12 @@
   boot.initrd.luks.devices.cryptroot = {
     device = "/dev/md0";
     allowDiscards = true;
+    # Unlock order: TPM2 (pcrlock policy from lanzaboote measured boot, hands-free
+    # on an untampered boot chain), then the YubiKey (FIDO2), then after 10s the
+    # passphrase prompt. Enroll once, after a rebuild so the policy is current:
+    #   systemd-cryptenroll --tpm2-device=auto --tpm2-pcrlock=/var/lib/systemd/pcrlock.json /dev/md0
+    #   systemd-cryptenroll --fido2-device=auto /dev/md0
+    crypttabExtraOpts = ["tpm2-device=auto" "fido2-device=auto" "token-timeout=10"];
   };
 
   fileSystems."/" = {
@@ -55,8 +64,26 @@
     fsType = "xfs";
   };
 
+  # The EC charge limit as standard battery attributes, so UPower (and the cabin
+  # Battery menu) can stop charging at 80 %. The driver stands aside on Framework
+  # laptops unless asked, since the EC also has its own charge limit command.
+  boot.extraModprobeConfig = ''
+    options cros_charge_control probe_with_fwk_charge_control=1
+  '';
+
+  # Night light (the cabin Display menu switches it): no password for wheel.
+  programs.cosmic-nightlight.enable = true;
+
   services.automatic-timezoned.enable = true;
-  services.geoclue2.enable = true;
+  services.geoclue2 = {
+    enable = true;
+    # The cabin clock asks for the location for its weather. COSMIC runs no
+    # GeoClue agent to ask the user, so the clock is allowed as a system app.
+    appConfig."dev.troy.Cabin.Clock" = {
+      isAllowed = true;
+      isSystem = true;
+    };
+  };
 
   boot.loader.systemd-boot.enable = lib.mkForce false;
   boot.loader.efi.canTouchEfiVariables = true;

@@ -13,17 +13,17 @@ in {
     dev-tools.enable = true;
     yubikey.enable = true;
 
-    gnome-desktop = {
-      enable = true;
-      extraPackages = with pkgs; [
-        technorino.packages.${pkgs.stdenv.hostPlatform.system}.package
-        spotify
-        vlc
-        slack
-        zoom-us
-        claude-code
-      ];
-    };
+    cosmic-desktop.enable = true;
+    cabin.enable = true;
+
+    desktop-apps.extraPackages = with pkgs; [
+      technorino.packages.${pkgs.stdenv.hostPlatform.system}.package
+      spotifast
+      vlc
+      slack
+      zoom-us
+      claude-code
+    ];
   };
 
   # Bun preload that disables Claude Code's agent_summary side-queries (~15-20% of token spend).

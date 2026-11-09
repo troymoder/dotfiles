@@ -9,7 +9,7 @@
   config = {
     nix = {
       channel.enable = false;
-      settings.experimental-features = ["nix-command" "flakes" "flake-self-attrs"];
+      settings.experimental-features = ["nix-command" "flakes"];
       settings.trusted-users = ["@wheel" "root"];
     };
 
@@ -19,12 +19,23 @@
 
     environment.systemPackages = with pkgs; [
       (writeShellScriptBin "nixos-rebuild-flake" ''
-        ${nixos-rebuild}/bin/nixos-rebuild --flake .#${buildName} $@
+        rebuild=(${nixos-rebuild}/bin/nixos-rebuild --flake .#${buildName} "$@")
+        # Builds go through nom; these need the terminal untouched.
+        for arg in "$@"; do
+          case $arg in
+            edit | repl | list-generations | -h | --help) exec "''${rebuild[@]}" ;;
+          esac
+        done
+        set -o pipefail
+        "''${rebuild[@]}" --log-format internal-json |& ${nix-output-monitor}/bin/nom --json
       '')
-      neovim
+      (noDesktopEntry neovim)
       git
       coreutils
     ];
+
+    # No "NixOS Manual" launcher entry.
+    documentation.nixos.enable = false;
 
     services.fwupd.enable = lib.mkDefault true;
     networking.networkmanager.enable = lib.mkDefault true;

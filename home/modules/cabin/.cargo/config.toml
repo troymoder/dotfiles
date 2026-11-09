@@ -1,0 +1,4 @@
+# Where the Tabler Icons pack is for a development build (the Nix build sets
+# this itself): icons are embedded from it by name at compile time.
+[env]
+TABLER_ICONS_DIR = { value = ".dev/tabler-icons/icons/outline", relative = true }

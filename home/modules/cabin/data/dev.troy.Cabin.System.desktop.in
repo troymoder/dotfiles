@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=System
+Comment=Live CPU and memory bars; the System panel under them
+Type=Application
+Exec=@bindir@/cabin-applet --kind system
+Terminal=false
+Categories=COSMIC;
+NoDisplay=true
+Icon=dev.troy.Cabin
+X-CosmicApplet=true
+X-HostWaylandDisplay=true

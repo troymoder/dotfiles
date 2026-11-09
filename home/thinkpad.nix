@@ -11,12 +11,11 @@
     dev-tools.enable = true;
     yubikey.enable = true;
 
-    gnome-desktop = {
-      enable = true;
-      extraPackages = [
-        technorino.packages.${pkgs.stdenv.hostPlatform.system}.package
-      ];
-    };
+    cosmic-desktop.enable = true;
+    cabin.enable = true;
+    desktop-apps.extraPackages = [
+      technorino.packages.${pkgs.stdenv.hostPlatform.system}.package
+    ];
   };
 
   programs.home-manager.enable = true;
