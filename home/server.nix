@@ -11,7 +11,7 @@
       go = true;
       bazel = true;
       protobuf = true;
-      extraPackages = with pkgs; [ffmpeg-full pkg-config cmake ninja google-cloud-sdk];
+      extraPackages = with pkgs; [pkg-config cmake ninja google-cloud-sdk];
     };
   };
 

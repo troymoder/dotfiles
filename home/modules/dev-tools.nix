@@ -21,6 +21,12 @@ in {
       description = "Install Python (uv)";
     };
 
+    node = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Install Node.js (pnpm)";
+    };
+
     go = lib.mkOption {
       type = lib.types.bool;
       default = false;
@@ -48,12 +54,25 @@ in {
 
   config = lib.mkIf cfg.enable {
     home.packages = with pkgs;
-      [gcc16]
+      # clang's wrapper also ships cc/c++/cpp. Both wrappers are already lowPrio (10) in
+      # nixpkgs, so hiPrio gcc to keep it as `cc`.
+      [(lib.hiPrio gcc16) llvmPackages_23.clang ffmpeg-full]
       ++ lib.optionals cfg.rust [rustup]
       ++ lib.optionals cfg.python [uv]
+      ++ lib.optionals cfg.node [nodejs pnpm]
       ++ lib.optionals cfg.go [go]
       ++ lib.optionals cfg.bazel [bazelisk starpls buildifier]
       ++ lib.optionals cfg.protobuf [protobuf buf]
       ++ cfg.extraPackages;
+
+    home.sessionPath =
+      # `cargo install` binaries.
+      lib.optionals cfg.rust ["$HOME/.cargo/bin"]
+      # uv installs managed Pythons (`uv python install --default`) and `uv tool` binaries here.
+      ++ lib.optionals cfg.python ["$HOME/.local/bin"]
+      # `pnpm add -g` binaries.
+      ++ lib.optionals cfg.node ["$HOME/.local/share/pnpm"];
+
+    home.sessionVariables = lib.mkIf cfg.node {PNPM_HOME = "$HOME/.local/share/pnpm";};
   };
 }
