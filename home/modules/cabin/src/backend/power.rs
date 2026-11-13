@@ -14,7 +14,8 @@ use super::latest::Latest;
 pub struct Battery {
     pub percentage: f64,
     pub charging: bool,
-    /// Seconds to empty, or to full while charging.
+    /// Seconds to empty, or while charging to where charging stops
+    /// (`charge_target`).
     pub time_left: Option<u64>,
     /// Watts in or out.
     pub rate: f64,
@@ -23,6 +24,9 @@ pub struct Battery {
     pub cycles: Option<i32>,
     /// Full, and plugged in.
     pub full: bool,
+    /// Plugged in but not charging: held at the charge limit (UPower's
+    /// "pending charge"). Counts as charging for the icon.
+    pub held: bool,
     /// What the USB-C charger can give, in watts, when one is plugged in.
     pub charger_w: Option<f32>,
     /// Charging stopped short of full to spare the battery, where the
@@ -44,6 +48,22 @@ pub struct ChargeLimit {
 pub const HISTORY_HOURS: u32 = 12;
 
 impl Battery {
+    /// Where charging stops short of full: the limit's end, while it's on
+    /// and not reached yet.
+    pub fn charge_target(&self) -> Option<u32> {
+        self.limit.filter(|l| l.enabled && self.percentage < f64::from(l.end)).map(|l| l.end)
+    }
+
+    /// "Full" or "80 %": where the charge is headed.
+    pub fn target_name(&self) -> String {
+        self.charge_target().map_or_else(|| "Full".to_owned(), |end| format!("{end} %"))
+    }
+
+    /// Running out: on battery at a fifth or less. The icon shows it red.
+    pub fn low(&self) -> bool {
+        !self.charging && self.percentage <= 20.0
+    }
+
     /// Tabler's batteries: charging, or by quarters.
     pub fn icon(&self) -> String {
         if self.charging {
@@ -180,7 +200,7 @@ async fn battery(conn: &zbus::Connection) -> Option<Battery> {
         return None;
     }
     let state = device.state().await.ok()?;
-    let charging = state == 1 || state == 4;
+    let charging = state == 1 || state == 4 || state == 5;
     let seconds = if charging { device.time_to_full().await } else { device.time_to_empty().await };
     // Charge cycles and the history are the real battery's, not the display device's.
     let mut cycles = None;
@@ -213,23 +233,35 @@ async fn battery(conn: &zbus::Connection) -> Option<Battery> {
             }
         }
     }
+    let percentage = device.percentage().await.ok()?;
+    let mut time_left = seconds.ok().filter(|s| *s > 0).map(|s| s as u64);
+    // UPower times the charge to 100 %; with the limit on it stops at the
+    // limit, and the energy still to come is in proportion to the percent.
+    if let Some(end) = limit.filter(|l| charging && l.enabled && percentage < f64::from(l.end)).map(|l| f64::from(l.end)) {
+        time_left = time_left.map(|s| (s as f64 * (end - percentage) / (100.0 - percentage)) as u64);
+    }
     Some(Battery {
-        percentage: device.percentage().await.ok()?,
+        percentage,
         charging,
-        time_left: seconds.ok().filter(|s| *s > 0).map(|s| s as u64),
+        time_left,
         rate: device.energy_rate().await.unwrap_or(0.0),
         health: device.capacity().await.ok().filter(|c| *c > 0.0),
         cycles,
         full: state == 4,
-        charger_w: charger_watts(),
+        held: state == 5,
+        charger_w: match super::ec::charger_watts(conn).await {
+            Some(watts) => Some(watts),
+            None => charger_watts(),
+        },
         limit,
         history,
     })
 }
 
-/// The charger's rating: the strongest profile it advertises over Power
-/// Delivery (the kernel lists the standard ones up to 20 V), else the most the
-/// online USB-C source could give. Not what's drawn now.
+/// The charger's rating as the kernel has it, where cabin-ec can't tell: the
+/// strongest profile it advertises over Power Delivery (the kernel lists the
+/// standard ones up to 20 V), else the most the online USB-C source could
+/// give. Not what's drawn now.
 fn charger_watts() -> Option<f32> {
     let read = |path: std::path::PathBuf| std::fs::read_to_string(path).ok().and_then(|s| s.trim().parse::<f64>().ok());
     // Only when a source is actually plugged in.

@@ -84,6 +84,9 @@ pub struct StatusBar {
     pub headphones: Option<u8>,
     /// Icon, percent and tooltip.
     pub battery: Option<(String, f32, String)>,
+    /// The battery running out: its icon red.
+    #[serde(default)]
+    pub battery_low: bool,
     pub privacy: Option<PrivacyPill>,
 }
 

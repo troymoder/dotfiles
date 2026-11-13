@@ -20,6 +20,7 @@ use crate::{
         dns::{Choice, PROVIDERS},
         gpu::{self, Status},
         graphics::Graphics,
+        idle::{self, Timeout},
         power::Profiles,
     },
 };
@@ -87,7 +88,7 @@ impl App {
 
     fn buttons_row(&self) -> Element<'_, Message> {
         let battery = match self.power.as_ref().and_then(|p| p.battery.as_ref()) {
-            Some(battery) => round_label(&battery.icon(), format!("{:.0} %", battery.percentage), Some(Message::ToggleCard(Card::Battery)), self.open(Card::Battery)),
+            Some(battery) => round_label(&battery.icon(), battery.low().then_some(palette::LOW), format!("{:.0} %", battery.percentage), Some(Message::ToggleCard(Card::Battery)), self.open(Card::Battery)),
             None => square_button("battery", None, false),
         };
         widget::row::with_children(vec![
@@ -373,8 +374,13 @@ impl App {
                     });
                     format!("System draw {:.1} W", cpu + gpu.unwrap_or(0.0) + 3.2)
                 });
-                if battery.full {
-                    rows.push(menu_row(Some("plug-connected"), "Fully charged".to_owned(), Some("Plugged in · battery idle".to_owned()), None, None, false));
+                if battery.full || battery.held {
+                    let (title, sub) = match battery.limit.filter(|l| battery.held && l.enabled) {
+                        Some(limit) => ("Not charging", format!("Plugged in · held at {} %", limit.end)),
+                        None if battery.held => ("Not charging", "Plugged in · battery idle".to_owned()),
+                        None => ("Fully charged", "Plugged in · battery idle".to_owned()),
+                    };
+                    rows.push(menu_row(Some("plug-connected"), title.to_owned(), Some(sub), None, None, false));
                     if let Some(w) = battery.charger_w {
                         rows.push(menu_row(Some("bolt"), format!("{w:.0} W charger"), Some("USB-C".to_owned()), None, None, false));
                     }
@@ -382,7 +388,7 @@ impl App {
                         rows.push(menu_row(Some("activity"), draw, None, None, None, false));
                     }
                 } else if battery.charging {
-                    let full_in = battery.time_left.map(|s| format!("Full in {}", duration(s))).unwrap_or_else(|| "Plugged in".to_owned());
+                    let full_in = battery.time_left.map(|s| format!("{} in {}", battery.target_name(), duration(s))).unwrap_or_else(|| "Plugged in".to_owned());
                     rows.push(menu_row(Some("plug-connected"), "Charging".to_owned(), Some(full_in), None, None, false));
                     if battery.rate > 0.5 {
                         rows.push(menu_row(Some("bolt"), format!("Charging at {watts}"), charger, None, None, false));
@@ -429,7 +435,34 @@ impl App {
             None => rows.push(note("No battery")),
         }
         rows.push(rule());
+        rows.push(heading("Power saving"));
+        rows.extend(self.idle_rows());
+        rows.push(rule());
         rows.push(row_item(Some("settings"), "Power settings".to_owned(), None, Some(Message::Settings(Some("power")))));
+        rows
+    }
+
+    /// cosmic-idle's timeouts, each a row with its time at the end that
+    /// opens COSMIC Settings' choices under it.
+    fn idle_rows(&self) -> Vec<Element<'_, Message>> {
+        let mut rows = Vec::new();
+        for (timeout, current) in Timeout::ALL.into_iter().zip(self.idle) {
+            let open = self.idle_open == Some(timeout);
+            let trailing = widget::row::with_children(vec![
+                text::small(idle::label(current)).class(theme::Text::Custom(super::dimmed)).into(),
+                faint_icon(if open { "chevron-down" } else { "chevron-right" }),
+            ])
+            .spacing(10)
+            .align_y(Alignment::Center);
+            rows.push(Row::new(timeout.title()).icon(timeout.icon()).trailing(trailing).on_press(Message::ToggleIdle(timeout)).view());
+            if open {
+                let choices = timeout.choices().iter().map(|m| Some(m * 60_000)).chain([None]);
+                rows.extend(choices.map(|ms| {
+                    let picked = ms == current;
+                    Row::new(idle::label(ms)).indent().trailing_maybe(picked.then(check)).selected(picked).on_press(Message::SetIdle(timeout, ms)).view()
+                }));
+            }
+        }
         rows
     }
 

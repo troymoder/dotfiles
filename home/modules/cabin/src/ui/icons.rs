@@ -16,7 +16,7 @@ const ICONS: &[(&str, &[u8])] = tabler![
     "activity", "arrows-shuffle", "battery", "battery-1", "battery-2", "battery-3", "battery-4", "battery-charging",
     "bell-off", "bluetooth", "bolt", "box", "brand-chrome", "brand-firefox", "brand-spotify", "camera", "check",
     "chevron-down", "chevron-left", "chevron-right", "chevron-up", "cloud", "cloud-rain", "cloud-snow", "cloud-storm",
-    "cloud-fog", "device-desktop", "download", "eye", "eye-off", "gauge", "heart", "keyboard", "leaf", "lock", "logout",
+    "cloud-fog", "device-desktop", "device-laptop-off", "download", "eye", "eye-off", "gauge", "heart", "keyboard", "leaf", "lock", "logout",
     "map-pin", "message-circle", "microphone", "microphone-off", "moon", "mouse", "music", "network", "package", "photo",
     "plane", "player-pause", "player-play", "player-skip-back", "player-skip-forward", "plug-connected", "power",
     "refresh", "repeat", "repeat-once", "rocket", "scale", "server", "settings", "sun", "sunset", "sunrise", "volume",

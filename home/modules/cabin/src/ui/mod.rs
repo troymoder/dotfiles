@@ -216,9 +216,14 @@ pub fn round_button<'a, M: Clone + 'a>(icon_name: &str, on_press: Option<M>, lit
         .into()
 }
 
-/// A pill with an icon and a word: the battery with its charge.
-pub fn round_label<'a, M: Clone + 'a>(icon_name: &str, label: String, on_press: Option<M>, lit: bool) -> Element<'a, M> {
-    let content = widget::row::with_children(vec![icon(icon_name, 15).into(), text::body(label).into()]).spacing(6).align_y(Alignment::Center);
+/// A pill with an icon and a word: the battery with its charge; the icon in
+/// its own color when given one (a battery running out).
+pub fn round_label<'a, M: Clone + 'a>(icon_name: &str, tint: Option<Color>, label: String, on_press: Option<M>, lit: bool) -> Element<'a, M> {
+    let glyph: Element<'a, M> = match tint {
+        Some(color) => widget::container(icon(icon_name, 15)).class(theme::Container::custom(move |_| widget::container::Style { icon_color: Some(color), ..Default::default() })).into(),
+        None => icon(icon_name, 15).into(),
+    };
+    let content = widget::row::with_children(vec![glyph, text::body(label).into()]).spacing(6).align_y(Alignment::Center);
     button::custom(widget::container(content).center_y(Length::Fill).class(inherit()))
         .height(Length::Fixed(SQUARE))
         .padding([0, 12])

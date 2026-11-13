@@ -51,6 +51,8 @@ pub const OVER: Color = rgb(0xe2, 0x78, 0x8a);
 pub const RED: Color = rgb(0xb8, 0x38, 0x4a);
 pub const RED_HOVER: Color = rgb(0xc9, 0x4a, 0x5c);
 pub const ON_RED: Color = rgb(0xfb, 0xe9, 0xec);
+/// A battery running out: its icon on the bar and in the controls.
+pub const LOW: Color = rgb(0xe8, 0x4f, 0x63);
 /// A muted app's badge.
 pub const MUTE_BADGE: Color = rgb(0xd0, 0x43, 0x5a);
 /// The plate behind a player's badge on its cover.

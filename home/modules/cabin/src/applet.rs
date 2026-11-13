@@ -75,8 +75,12 @@ impl<M> iced::advanced::Widget<M, cosmic::Theme, cosmic::Renderer> for Shadowed<
 }
 
 fn bar_icon<'a, M: 'a>(name: &str, size: u16) -> Element<'a, M> {
+    tinted_bar_icon(name, size, Color::WHITE)
+}
+
+fn tinted_bar_icon<'a, M: 'a>(name: &str, size: u16, color: Color) -> Element<'a, M> {
     let shadow = widget::container(icon(name, size)).class(theme::Container::custom(|_| widget::container::Style { icon_color: Some(SHADOW), ..Default::default() }));
-    let top = widget::container(icon(name, size)).class(theme::Container::custom(|_| widget::container::Style { icon_color: Some(Color::WHITE), ..Default::default() }));
+    let top = widget::container(icon(name, size)).class(theme::Container::custom(move |_| widget::container::Style { icon_color: Some(color), ..Default::default() }));
     shadowed(shadow.into(), top.into())
 }
 
@@ -259,7 +263,8 @@ impl cosmic::Application for Status {
             items.push(self.with_tooltip(bar_text(format!("{level} %"), 12.0, false), format!("Headphones battery {level} %")));
         }
         if let Some((name, percent, tip)) = &self.bar.battery {
-            let shown = widget::row::with_children(vec![bar_icon(name, size), bar_text(format!("{percent:.0} %"), 12.0, false)]).spacing(6).align_y(Alignment::Center);
+            let color = if self.bar.battery_low { palette::LOW } else { Color::WHITE };
+            let shown = widget::row::with_children(vec![tinted_bar_icon(name, size, color), bar_text(format!("{percent:.0} %"), 12.0, false)]).spacing(6).align_y(Alignment::Center);
             items.push(self.with_tooltip(shown, tip.clone()));
         }
         if items.is_empty() {

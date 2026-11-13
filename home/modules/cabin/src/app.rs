@@ -168,6 +168,9 @@ pub enum Message {
     OpenCard(Card),
     /// Charging to stop short of full, or not.
     SetChargeLimit(bool),
+    /// A power-saving timeout's choices shown or hidden, and one picked.
+    ToggleIdle(backend::idle::Timeout),
+    SetIdle(backend::idle::Timeout, Option<u32>),
     /// The displays as cosmic-randr lists them.
     Displays(Vec<backend::display::Output>),
     /// Night light as cosmic-nightlight has it, switched, or its settings.
@@ -253,6 +256,10 @@ pub struct App {
     pub(crate) preview_size: Option<(u32, u32)>,
     /// The list of sizes open under the Resolution row.
     pub(crate) sizes_open: bool,
+    /// The power-saving timeouts, read when the Battery menu opens, and the
+    /// one whose choices are open.
+    pub(crate) idle: backend::idle::Idle,
+    pub(crate) idle_open: Option<backend::idle::Timeout>,
     /// Every interface listed under Network in the System menu.
     pub(crate) net_all: bool,
     /// The last while of the machine's power draw, for the graph.
@@ -344,6 +351,7 @@ impl App {
         self.stream_card = None;
         self.preview = None;
         self.sizes_open = false;
+        self.idle_open = None;
         self.mic_level = 0.0;
         self.output_level = 0.0;
         self.stream_levels.clear();
@@ -443,7 +451,8 @@ impl App {
     pub(crate) fn status_bar(&self, open: bool) -> bus::StatusBar {
         let icons = self.bar_icons().into_iter().map(|(icon, tip)| (icon.to_owned(), tip)).collect();
         let battery = self.power.as_ref().and_then(|p| p.battery.as_ref()).map(|b| (b.icon(), b.percentage as f32, Self::battery_tip(b)));
-        bus::StatusBar { open, icons, headphones: self.output_device_battery(), battery, privacy: self.privacy_pill() }
+        let battery_low = self.power.as_ref().and_then(|p| p.battery.as_ref()).is_some_and(|b| b.low());
+        bus::StatusBar { open, icons, headphones: self.output_device_battery(), battery, battery_low, privacy: self.privacy_pill() }
     }
 
     /// What the System button draws: CPU and memory as two small bars.
@@ -501,8 +510,10 @@ impl App {
     fn battery_tip(battery: &crate::backend::power::Battery) -> String {
         let state = if battery.full {
             "fully charged".to_owned()
+        } else if battery.held {
+            "plugged in, not charging".to_owned()
         } else if battery.charging {
-            battery.time_left.map_or_else(|| "charging".to_owned(), |s| format!("charging, full in {}", duration(s)))
+            battery.time_left.map_or_else(|| "charging".to_owned(), |s| format!("charging, {} in {}", battery.target_name().to_lowercase(), duration(s)))
         } else {
             battery.time_left.map_or_else(|| "on battery".to_owned(), |s| format!("{} left", duration(s)))
         };
@@ -624,6 +635,14 @@ impl App {
                     backend::power::set_charge_limit(enabled).await;
                     cosmic::action::app(Message::Done)
                 });
+            }
+            Message::ToggleIdle(timeout) => self.idle_open = if self.idle_open == Some(timeout) { None } else { Some(timeout) },
+            Message::SetIdle(timeout, ms) => {
+                self.idle_open = None;
+                if let Some(i) = backend::idle::Timeout::ALL.iter().position(|t| *t == timeout) {
+                    self.idle[i] = ms;
+                }
+                backend::idle::set(timeout, ms);
             }
             Message::OpenCard(card) => {
                 // Opened as a press on it would: whatever it reads is read.
@@ -806,6 +825,10 @@ impl App {
                 self.wifi_all = false;
                 if card == Card::Network {
                     return load_networks(true);
+                }
+                if card == Card::Battery {
+                    self.idle = backend::idle::read();
+                    self.idle_open = None;
                 }
                 if card == Card::Display {
                     self.night = backend::nightlight::read();

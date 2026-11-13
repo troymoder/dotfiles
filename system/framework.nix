@@ -1,4 +1,6 @@
 {
+  config,
+  options,
   pkgs,
   variables,
   lib,
@@ -19,6 +21,7 @@
       rootMdUuid = "cb37143d:d9cb8ef8:f0081246:a0716c23";
     };
     fw16-kbd-uleds.enable = true;
+    cabin-ec.enable = true;
     home-manager.extraGroups = ["plugdev"];
     dns.enable = false;
   };
@@ -64,15 +67,46 @@
     fsType = "xfs";
   };
 
-  # The EC charge limit as standard battery attributes, so UPower (and the cabin
-  # Battery menu) can stop charging at 80 %. The driver stands aside on Framework
-  # laptops unless asked, since the EC also has its own charge limit command.
+  # The charge limit as BAT1's charge_control_end_threshold, so UPower (and the
+  # cabin Battery menu) can stop charging at 80 %: framework-laptop-kmod drives
+  # the Framework EC's own limit command, the one the BIOS setting and
+  # framework_tool use. Not the in-kernel cros_charge_control (left to stand
+  # aside, its default on Framework laptops): on BIOS 03.05 the EC turns that
+  # driver's charge sustainer back off, and the battery charged to 100 % with
+  # the limit on. UPower writes the limit again each boot.
+  # The module's keyboard LED is left out: the FW16 keyboard is a USB module
+  # (fw16-kbd-uleds gives its light), and a second kbd_backlight LED would
+  # compete for UPower's keyboard backlight.
+  boot.extraModulePackages = [
+    (config.boot.kernelPackages.framework-laptop-kmod.overrideAttrs (old: {
+      postPatch =
+        (old.postPatch or "")
+        + ''
+          substituteInPlace framework_laptop.c \
+            --replace-fail 'ret = devm_led_classdev_register(&pdev->dev, &data->kb_led);' 'ret = 0;'
+        '';
+    }))
+  ];
+  boot.kernelModules = ["framework_laptop"];
+  # It looks for the EC once, when it loads, so the EC driver must be up first.
   boot.extraModprobeConfig = ''
-    options cros_charge_control probe_with_fwk_charge_control=1
+    softdep framework_laptop pre: cros_ec_lpcs
   '';
 
   # Night light (the cabin Display menu switches it): no password for wheel.
   programs.cosmic-nightlight.enable = true;
+  # Upstream reads its git crates (libcosmic and co.) with allowBuiltinFetchGit,
+  # which fetches all 53 twice (app and helper) each time the system evaluates.
+  # Vendor them in one hashed build instead; bump the hash with the input.
+  programs.cosmic-nightlight.package = options.programs.cosmic-nightlight.package.default.override {
+    rustPlatform =
+      pkgs.rustPlatform
+      // {
+        buildRustPackage = args:
+          pkgs.rustPlatform.buildRustPackage (removeAttrs args ["cargoLock"]
+            // {cargoHash = "sha256-hNKbWfVLvsrk7fO2J+ML6seGNmaQ8VBvlW1aDyxc1c4=";});
+      };
+  };
 
   services.automatic-timezoned.enable = true;
   services.geoclue2 = {

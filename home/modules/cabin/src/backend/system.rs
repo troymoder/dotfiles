@@ -655,14 +655,21 @@ fn samples() -> impl Stream<Item = System> + Send {
         .await
         .expect("sampler setup");
         tokio::time::sleep(Duration::from_millis(400)).await;
+        // RAPL is root's: cabin-ec reads it where we can't.
+        let system_bus = zbus::Connection::system().await.ok();
         loop {
-            let (next, system) = tokio::task::spawn_blocking(move || {
+            let (next, mut system) = tokio::task::spawn_blocking(move || {
                 let system = sampler.sample();
                 (sampler, system)
             })
             .await
             .expect("sampler");
             sampler = next;
+            if system.draw.cpu_w.is_none()
+                && let Some(conn) = &system_bus
+            {
+                system.draw.cpu_w = super::ec::cpu_watts(conn).await;
+            }
             if out.send(system).await.is_err() {
                 return;
             }

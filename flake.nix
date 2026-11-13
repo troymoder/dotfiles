@@ -71,7 +71,6 @@
                 postBuild = "rm -rf $out/share/applications";
               };
 
-
             # Launcher: drop the system76-power scripts (no such daemon here) and ship
             # only the web search shortcuts in use.
             pop-launcher = prev.pop-launcher.overrideAttrs (old: {

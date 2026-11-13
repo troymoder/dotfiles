@@ -9,7 +9,7 @@
   config = {
     nix = {
       channel.enable = false;
-      settings.experimental-features = ["nix-command" "flakes"];
+      settings.experimental-features = ["nix-command" "flakes" "flake-self-attrs"];
       settings.trusted-users = ["@wheel" "root"];
     };
 
