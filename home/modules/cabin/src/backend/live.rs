@@ -370,12 +370,7 @@ impl State {
         let (width, height) = formats.buffer_size;
         let modifiers: Vec<gbm::Modifier> = modifiers.iter().map(|m| (*m).into()).collect();
         let bo = if modifiers.iter().all(|m| *m == gbm::Modifier::Invalid) {
-            gbm.create_buffer_object::<()>(
-                width,
-                height,
-                format,
-                gbm::BufferObjectFlags::RENDERING,
-            )
+            gbm.create_buffer_object::<()>(width, height, format, gbm::BufferObjectFlags::RENDERING)
         } else {
             gbm.create_buffer_object_with_modifiers::<()>(
                 width,
@@ -658,8 +653,11 @@ mod tests {
         let started = std::time::Instant::now();
         let mut first = None;
         while let Ok(Some(Event::Picture(key, buffer))) = runtime.block_on(async {
-            tokio::time::timeout(until.saturating_duration_since(std::time::Instant::now()), rx.next())
-                .await
+            tokio::time::timeout(
+                until.saturating_duration_since(std::time::Instant::now()),
+                rx.next(),
+            )
+            .await
         }) {
             first.get_or_insert(started.elapsed());
             if !counts.contains_key(&key) {

@@ -13,7 +13,10 @@
   pciutils,
   ffmpeg,
   wl-clipboard,
+  libqalculate,
+  fd,
   cantarell-fonts,
+  papirus-icon-theme,
   fetchFromGitHub,
   libgbm,
 }: let
@@ -61,10 +64,13 @@ in
 
     # It shells out to these for sound and cover art, and cabin-capture to
     # ffmpeg (recordings, with PulseAudio for their sound; the headless one
-    # has none), pw-cli/pw-link (an app's sound) and wl-copy (screenshots).
+    # has none), pw-cli/pw-link (an app's sound) and wl-copy (screenshots,
+    # and a sum's answer); the search to qalc (sums) and fd (`find`).
     preFixup = ''
-      libcosmicAppWrapperArgs+=(--prefix PATH : ${lib.makeBinPath [pipewire wireplumber pulseaudio curl pciutils ffmpeg wl-clipboard]})
+      libcosmicAppWrapperArgs+=(--prefix PATH : ${lib.makeBinPath [pipewire wireplumber pulseaudio curl pciutils ffmpeg wl-clipboard libqalculate fd]})
       libcosmicAppWrapperArgs+=(--set QS_FONT_DIR ${cantarell-fonts}/share/fonts)
+      # The overview's web searches show their engine's icon from here.
+      libcosmicAppWrapperArgs+=(--set CABIN_WEB_ICONS ${papirus-icon-theme}/share/icons/Papirus/64x64/apps)
     '';
 
     postInstall = ''

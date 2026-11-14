@@ -32,7 +32,6 @@ zbus = { version = "5.14.0", default-features = false, features = ["tokio", "p2p
 
 [profile.release]
 opt-level = 3
-panic = "abort"
 # Thin LTO re-optimised all of libcosmic once per binary: a one-line edit took
 # 1m50s, 5s like this. package.nix turns incremental off for the clean build.
 lto = false

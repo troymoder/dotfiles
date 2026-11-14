@@ -1491,32 +1491,88 @@ mod tests {
         struct Speaker(String);
         impl Drop for Speaker {
             fn drop(&mut self) {
-                let _ = Process::new("pactl").args(["unload-module", &self.0]).status();
+                let _ = Process::new("pactl")
+                    .args(["unload-module", &self.0])
+                    .status();
             }
         }
         let dir = std::env::temp_dir();
-        let (tone, path) = (dir.join("cabin-capture-tone.wav"), dir.join("cabin-capture-test-app.mp4"));
-        let made = Process::new("ffmpeg").args(["-v", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=8"]).arg(&tone).status();
+        let (tone, path) = (
+            dir.join("cabin-capture-tone.wav"),
+            dir.join("cabin-capture-test-app.mp4"),
+        );
+        let made = Process::new("ffmpeg")
+            .args([
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=8",
+            ])
+            .arg(&tone)
+            .status();
         assert!(made.unwrap().success(), "no tone");
-        let module = Process::new("pactl").args(["load-module", "module-null-sink", "sink_name=cabin_capture_test"]).output().unwrap();
+        let module = Process::new("pactl")
+            .args([
+                "load-module",
+                "module-null-sink",
+                "sink_name=cabin_capture_test",
+            ])
+            .output()
+            .unwrap();
         let _speaker = Speaker(String::from_utf8_lossy(&module.stdout).trim().to_owned());
-        let mut player = Process::new("pw-play").args(["--target", "cabin_capture_test", "-P", "{ application.name = \"CabinTone\" }"]).arg(&tone).spawn().unwrap();
+        let mut player = Process::new("pw-play")
+            .args([
+                "--target",
+                "cabin_capture_test",
+                "-P",
+                "{ application.name = \"CabinTone\" }",
+            ])
+            .arg(&tone)
+            .spawn()
+            .unwrap();
         std::thread::sleep(Duration::from_millis(500));
-        assert_eq!(audio_apps().iter().filter(|a| *a == "CabinTone").count(), 1, "the tone's app isn't listed");
+        assert_eq!(
+            audio_apps().iter().filter(|a| *a == "CabinTone").count(),
+            1,
+            "the tone's app isn't listed"
+        );
 
         let (commands, receiver) = calloop::channel::sync_channel(8);
         let (tx, mut rx) = mpsc::channel(8);
         std::thread::spawn(move || run(receiver, tx));
         let runtime = tokio::runtime::Runtime::new().unwrap();
-        let mut next = || runtime.block_on(async { tokio::time::timeout(Duration::from_secs(10), rx.next()).await }).expect("an event within 10 s").expect("the thread alive");
+        let mut next = || {
+            runtime
+                .block_on(async { tokio::time::timeout(Duration::from_secs(10), rx.next()).await })
+                .expect("an event within 10 s")
+                .expect("the thread alive")
+        };
         let output = loop {
             if let Event::Shot(shot) = next() {
                 break shot.name;
             }
         };
-        let sound = Sound { app: Some("CabinTone".into()), ..Sound::default() };
-        let crop = Some(Rect { x: 0, y: 0, width: 320, height: 200 });
-        commands.send(Command::Record { target: Target::Output(output), crop, sound, path: path.clone() }).unwrap();
+        let sound = Sound {
+            app: Some("CabinTone".into()),
+            ..Sound::default()
+        };
+        let crop = Some(Rect {
+            x: 0,
+            y: 0,
+            width: 320,
+            height: 200,
+        });
+        commands
+            .send(Command::Record {
+                target: Target::Output(output),
+                crop,
+                sound,
+                path: path.clone(),
+            })
+            .unwrap();
         std::thread::sleep(Duration::from_secs(2));
         commands.send(Command::Stop).unwrap();
         loop {
@@ -1528,9 +1584,19 @@ mod tests {
         }
         let _ = player.kill();
         // The tone is about -21 dB; silence would be -91.
-        let measured = Process::new("ffmpeg").args(["-v", "info", "-i"]).arg(&path).args(["-af", "volumedetect", "-f", "null", "-"]).output().unwrap();
+        let measured = Process::new("ffmpeg")
+            .args(["-v", "info", "-i"])
+            .arg(&path)
+            .args(["-af", "volumedetect", "-f", "null", "-"])
+            .output()
+            .unwrap();
         let log = String::from_utf8_lossy(&measured.stderr);
-        let mean: f32 = log.split("mean_volume: ").nth(1).and_then(|s| s.split(' ').next()).and_then(|s| s.parse().ok()).expect("an audio stream");
+        let mean: f32 = log
+            .split("mean_volume: ")
+            .nth(1)
+            .and_then(|s| s.split(' ').next())
+            .and_then(|s| s.parse().ok())
+            .expect("an audio stream");
         assert!(mean > -30.0, "the app's sound is missing: mean {mean} dB");
     }
 }

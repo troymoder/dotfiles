@@ -31,33 +31,9 @@ in {
         # libcosmic only follows one level of icon-theme inheritance (Cosmic -> Pop), so
         # Adwaita-only icons never resolve. A shim theme lists all three as direct parents.
         "com.system76.CosmicTk/v1/icon_theme" = ''"CosmicAdwaita"'';
-        # Top panel plus a dock that hides only while a window covers it.
-        "com.system76.CosmicPanel/v1/entries" = ''["Panel", "Dock"]'';
-        "com.system76.CosmicPanel.Dock/v1/autohide" = "OnOverlap";
-        # Do not reserve screen space for the hidden dock; it slides over windows.
-        "com.system76.CosmicPanel.Dock/v1/exclusive_zone" = "false";
-        # Dock in the wallpaper navy (#192e46).
-        "com.system76.CosmicPanel.Dock/v1/background" = "Color((0.098, 0.18, 0.275))";
-        # Roomier dock: inner padding around the icons and gap from the screen edge.
-        "com.system76.CosmicPanel.Dock/v1/padding" = "12";
-        "com.system76.CosmicPanel.Dock/v1/margin" = "12";
-        "com.system76.CosmicPanel.Dock/v1/spacing" = "4";
-        # Dock holds only the pinned/running apps and the minimize applet.
-        "com.system76.CosmicPanel.Dock/v1/plugins_center" = ''
-          Some([
-              "com.system76.CosmicAppList",
-              "com.system76.CosmicAppletMinimize",
-          ])
-        '';
-        # Hidden dock keeps a 4px hover strip so the pointer at the bottom edge reveals it.
-        "com.system76.CosmicPanel.Dock/v1/autohide_behavior" = ''
-          (
-              wait_time: 200,
-              transition_time: 100,
-              handle_size: 4,
-              unhide_delay: 50,
-          )
-        '';
+        # The top panel only: the dock is Cabin's, in the workspace overview
+        # (pinned apps from CosmicAppList's favorites below, then running ones).
+        "com.system76.CosmicPanel/v1/entries" = ''["Panel"]'';
         # Center: our clock applet (date menu with notifications, calendar, weather).
         "com.system76.CosmicPanel.Panel/v1/plugins_center" = ''
           Some([
@@ -81,8 +57,15 @@ in {
         # Otherwise the panel turns solid whenever a window is maximized.
         "com.system76.CosmicPanel.Panel/v1/keep_style_on_maximize" = "true";
         # Bare Super opens Cabin's workspace overview (WorkspaceOverview in
-        # system_actions below); typing there searches via the launcher.
-        # Super+S takes a screenshot (replaces ToggleStacking); Super+Shift+S opens
+        # system_actions below): typing there searches. Super+/ (COSMIC's
+        # Launcher action) opens the same search on its own, over the windows,
+        # listing them first. Either takes pop-launcher's prefixes ("= 2*3",
+        # "~/", "find", "recent", "run"/"t:"/":", "?") and the web shortcuts
+        # in cabin/data/web-shortcuts.ron ("g rust"). Super+A (AppLibrary)
+        # opens it as the app library: every app's icon in a grid, no windows.
+        # COSMIC's launcher, app library and overview aren't installed
+        # (system/modules/cosmic.nix).
+        # Super+S keeps COSMIC's ToggleStacking; Super+Shift+S opens
         # Cabin's capture overlay (snip or record a region, window or screen), and
         # pressed again stops a recording.
         # Super+L locks (replaces Focus(Right); arrows cover focus).
@@ -96,7 +79,6 @@ in {
               (modifiers: [Super], key: "Tab"): Spawn("${config.modules.cabin.package}/bin/cabinctl switch next --previews"),
               (modifiers: [Super, Shift], key: "Tab"): Spawn("${config.modules.cabin.package}/bin/cabinctl switch prev --previews"),
 
-              (modifiers: [Super], key: "s"): System(Screenshot),
               (modifiers: [Super, Shift], key: "s"): Spawn("${config.modules.cabin.package}/bin/cabin-capture"),
               (modifiers: [Super], key: "l"): System(LockScreen),
 
@@ -116,6 +98,7 @@ in {
         # (only keys that differ from the shipped default).
         "com.system76.CosmicTheme.Dark.Builder/v2/accent" = ''Some("#5A8AB9FF")'';
         "com.system76.CosmicTheme.Dark.Builder/v2/active_hint" = "1";
+        # Pinned to the dock in Cabin's overview, in this order.
         "com.system76.CosmicAppList/v1/favorites" = ''
           [
               "chromium-browser",
@@ -137,8 +120,8 @@ in {
         # copied from it.
         "com.system76.CosmicSettings.Shortcuts/v1/system_actions" = ''
           {
-              /// Opens the application library
-              AppLibrary: "cosmic-app-library",
+              /// Opens the application library: Cabin's launcher, every app listed
+              AppLibrary: "${config.modules.cabin.package}/bin/cabinctl launcher --apps",
               /// Decreases screen brightness
               BrightnessDown: "busctl --user call com.system76.CosmicSettingsDaemon /com/system76/CosmicSettingsDaemon com.system76.CosmicSettingsDaemon DecreaseDisplayBrightness",
               /// Increases screen brightness
@@ -155,8 +138,8 @@ in {
               // KeyboardBrightnessDown,
               /// Increases keyboard brightness
               // KeyboardBrightnessUp,
-              /// Opens the launcher
-              Launcher: "cosmic-launcher",
+              /// Opens the launcher: Cabin's search, over the windows
+              Launcher: "${config.modules.cabin.package}/bin/cabinctl launcher",
               /// Locks the screen
               LockScreen: "loginctl lock-session",
               /// Mutes the active output device

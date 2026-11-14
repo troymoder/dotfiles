@@ -38,12 +38,16 @@ pub fn hand_over_to_dev() {
     else {
         return;
     };
-    let Ok(exe) = std::env::current_exe() else { return };
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
     if exe.starts_with(&checkout) {
         return;
     }
     // The Nix build's binaries are `.cabind-wrapped` and so on, behind a wrapper.
-    let Some(name) = exe.file_name().and_then(|n| n.to_str()) else { return };
+    let Some(name) = exe.file_name().and_then(|n| n.to_str()) else {
+        return;
+    };
     let name = name.trim_start_matches('.').trim_end_matches("-wrapped");
     if !checkout.join("target/release").join(name).exists() {
         return;

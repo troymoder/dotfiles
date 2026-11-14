@@ -995,32 +995,39 @@ pub fn menu<'a>(what: &crate::app::MenuFor) -> Element<'a, crate::app::Message> 
             Some(Message::HidePlayer(app.clone())),
         )],
     };
-    widget::mouse_area(
-        widget::container(widget::column::with_children(rows))
-            .padding(6)
-            .class(theme::Container::custom(|_| widget::container::Style {
-                background: Some(Background::Color(CTX)),
-                text_color: Some(TEXT),
-                icon_color: Some(TEXT),
-                border: iced::Border {
-                    radius: 16.0.into(),
-                    width: 1.0,
-                    color: CTX_BORDER,
-                },
-                shadow: iced::Shadow {
-                    color: Color {
-                        a: 0.45,
-                        ..Color::BLACK
-                    },
-                    offset: iced::Vector::new(0.0, 10.0),
-                    blur_radius: 28.0,
-                },
-                ..Default::default()
-            })),
-    )
-    .on_exit(Message::CloseMenu)
-    .into()
+    widget::mouse_area(context_card(rows))
+        .on_exit(Message::CloseMenu)
+        .into()
 }
+
+/// A right-click menu's card: its rows on the dark, rounded, shadowed card.
+pub fn context_card<'a, M: 'a>(rows: Vec<Element<'a, M>>) -> Element<'a, M> {
+    widget::container(widget::column::with_children(rows))
+        .padding(MENU_PADDING)
+        .class(theme::Container::custom(|_| widget::container::Style {
+            background: Some(Background::Color(CTX)),
+            text_color: Some(TEXT),
+            icon_color: Some(TEXT),
+            border: iced::Border {
+                radius: 16.0.into(),
+                width: 1.0,
+                color: CTX_BORDER,
+            },
+            shadow: iced::Shadow {
+                color: Color {
+                    a: 0.45,
+                    ..Color::BLACK
+                },
+                offset: iced::Vector::new(0.0, 10.0),
+                blur_radius: 28.0,
+            },
+            ..Default::default()
+        }))
+        .into()
+}
+
+/// A right-click menu card's padding round its rows.
+pub const MENU_PADDING: f32 = 6.0;
 
 /// How a slider is colored: in the accent; gray when muted; red past 100 %.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]

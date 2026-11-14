@@ -54,8 +54,8 @@ in {
 
   config = lib.mkIf cfg.enable {
     home.packages = with pkgs;
-      # clang's wrapper also ships cc/c++/cpp. Both wrappers are already lowPrio (10) in
-      # nixpkgs, so hiPrio gcc to keep it as `cc`.
+    # clang's wrapper also ships cc/c++/cpp. Both wrappers are already lowPrio (10) in
+    # nixpkgs, so hiPrio gcc to keep it as `cc`.
       [(lib.hiPrio gcc16) llvmPackages_23.clang ffmpeg-full]
       ++ lib.optionals cfg.rust [rustup]
       ++ lib.optionals cfg.python [uv]
@@ -64,6 +64,31 @@ in {
       ++ lib.optionals cfg.bazel [bazelisk starpls buildifier]
       ++ lib.optionals cfg.protobuf [protobuf buf]
       ++ cfg.extraPackages;
+
+    # The REPLs in the launcher: each opens in a terminal.
+    xdg.desktopEntries = let
+      papirus = "${pkgs.papirus-icon-theme}/share/icons/Papirus/64x64";
+    in
+      lib.optionalAttrs cfg.python {
+        python3 = {
+          name = "Python";
+          comment = "Python shell in a terminal";
+          exec = "python3";
+          terminal = true;
+          icon = "${papirus}/apps/python.svg";
+          categories = ["Development"];
+        };
+      }
+      // lib.optionalAttrs cfg.node {
+        node = {
+          name = "Node.js";
+          comment = "JavaScript shell in a terminal";
+          exec = "node";
+          terminal = true;
+          icon = "${papirus}/mimetypes/application-javascript.svg";
+          categories = ["Development"];
+        };
+      };
 
     home.sessionPath =
       # `cargo install` binaries.

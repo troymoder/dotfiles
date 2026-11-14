@@ -45,6 +45,7 @@ const ICONS: &[(&str, &[u8])] = tabler![
     "eye",
     "eye-off",
     "gauge",
+    "hammer",
     "heart",
     "keyboard",
     "leaf",
@@ -153,6 +154,11 @@ const ICONS: &[(&str, &[u8])] = tabler![
     // Capture: the toolbar's region and record.
     "marquee-2",
     "player-record",
+    // The overview's search, its dock's apps button and menus.
+    "search",
+    "grid-dots",
+    "plus",
+    "world",
 ];
 
 /// Icons Tabler doesn't draw, made in its style (24 grid, 2 px round

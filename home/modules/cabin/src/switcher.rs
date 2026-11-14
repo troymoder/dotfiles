@@ -17,8 +17,8 @@ use cosmic::iced::platform_specific::shell::subsurface_widget::{Subsurface, Subs
 use cosmic::{
     Element,
     iced::{
-        self, Alignment, Background, Color, Length, Point, Rectangle, Size,
-        keyboard::Modifiers, window,
+        self, Alignment, Background, Color, Length, Point, Rectangle, Size, keyboard::Modifiers,
+        window,
     },
     theme, widget,
 };
@@ -216,7 +216,10 @@ impl Switcher {
     }
 
     /// With the live pictures by window id.
-    pub fn view<'a>(&'a self, pictures: &HashMap<String, SubsurfaceBuffer>) -> Element<'a, Message> {
+    pub fn view<'a>(
+        &'a self,
+        pictures: &HashMap<String, SubsurfaceBuffer>,
+    ) -> Element<'a, Message> {
         let (Some(size), Some((frame, fit)), true) = (self.size, self.frame(), self.shown) else {
             return widget::space::horizontal().into();
         };
@@ -355,24 +358,21 @@ pub fn card<'a, M: Clone + 'a>(
             },
             ..Default::default()
         }));
-    widget::column::with_children(vec![picture.into(), label(w, label_text, width, None)])
+    widget::column::with_children(vec![picture.into(), label(w, label_text, None)])
         .spacing(LABEL_GAP)
         .into()
 }
 
-/// A window's label, `width` wide: the app's mark, `text` cut to fit, and
-/// `trailing` at the end.
+/// A window's label: the app's mark, `text` on one line (rolling by while
+/// hovered when it doesn't fit), and `trailing` at the end.
 pub fn label<'a, M: 'a>(
     w: &Window,
     text: &str,
-    width: f32,
     trailing: Option<Element<'a, M>>,
 ) -> Element<'a, M> {
-    let room = width - if trailing.is_some() { LABEL + 8.0 } else { 0.0 };
-    let text = ellipsize(text, ((room / 7.5) as usize).saturating_sub(5));
     let mut parts = vec![
         mark(&w.app_id, LABEL * 1.6),
-        ui::text::body(text).width(Length::Fill).into(),
+        ui::marquee::ticker(text.to_owned(), ui::text::body, false),
     ];
     parts.extend(trailing);
     widget::row::with_children(parts)
@@ -426,7 +426,11 @@ pub fn mark<'a, M: 'a>(app_id: &str, tile: f32) -> Element<'a, M> {
             let handle = if icon.starts_with('/') {
                 widget::icon::from_path(icon.into())
             } else {
-                widget::icon::from_name(icon).size(size).handle()
+                // Looked up at twice the size: the screen is scaled, and a
+                // raster found at the size it's drawn at comes out blurred.
+                widget::icon::from_name(icon)
+                    .size(size.saturating_mul(2))
+                    .handle()
             };
             widget::icon(handle).size(size).into()
         }

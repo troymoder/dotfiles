@@ -24,6 +24,11 @@ pub struct Placed<'a, Message> {
     /// the children's order, which must not change when one comes to the
     /// front: their state (a button half-pressed) goes by position.
     z: Vec<u32>,
+    /// Children the pointer passes through (a window being dragged).
+    passive: Vec<bool>,
+    /// Whether a child hidden under another at the pointer is told the
+    /// pointer is away (no hover through a menu); see `occluding`.
+    occlude: bool,
     size: Size,
     on_press_outside: Option<Message>,
     /// Where the children ended up last time, and whom to tell when that
@@ -38,6 +43,8 @@ impl<'a, Message> Placed<'a, Message> {
             places: Vec::new(),
             pressing: Vec::new(),
             z: Vec::new(),
+            passive: Vec::new(),
+            occlude: false,
             size,
             on_press_outside: None,
             report: None,
@@ -55,7 +62,48 @@ impl<'a, Message> Placed<'a, Message> {
         self.places.push((at, width));
         self.pressing.push(None);
         self.z.push(u32::MAX);
+        self.passive.push(false);
         self
+    }
+
+    /// A child over all the others that the pointer passes through: it
+    /// never hides what's under it (a window dragged over a workspace).
+    pub fn push_passive(
+        self,
+        child: impl Into<cosmic::Element<'a, Message>>,
+        at: Point,
+        width: f32,
+    ) -> Self {
+        let mut placed = self.push(child, at, width);
+        if let Some(last) = placed.passive.last_mut() {
+            *last = true;
+        }
+        placed
+    }
+
+    /// Only the topmost child under the pointer sees it at all; the others
+    /// are told it's away, so nothing hovers through what lies over it.
+    /// Not for panels: a slider dragged across another must keep its drag.
+    pub fn occluding(mut self) -> Self {
+        self.occlude = true;
+        self
+    }
+
+    /// The topmost child under `at` that takes the pointer.
+    fn topmost(&self, bounds: &[Rectangle], at: Point) -> Option<usize> {
+        self.stacked()
+            .into_iter()
+            .filter(|i| !self.passive[*i] && bounds[*i].contains(at))
+            .next_back()
+    }
+
+    /// The pointer as child `i` should see it.
+    fn cursor_for(&self, i: usize, covered: Option<usize>, cursor: mouse::Cursor) -> mouse::Cursor {
+        if self.occlude && covered.is_some_and(|top| top != i) {
+            mouse::Cursor::Unavailable
+        } else {
+            cursor
+        }
     }
 
     /// A child at this height in the stack, and what to send when it's pressed.
@@ -71,6 +119,7 @@ impl<'a, Message> Placed<'a, Message> {
         self.places.push((at, width));
         self.pressing.push(Some(message));
         self.z.push(z);
+        self.passive.push(false);
         self
     }
 
@@ -152,13 +201,8 @@ impl<Message: Clone> Widget<Message, cosmic::Theme, cosmic::Renderer> for Placed
         // pane takes the press, the slider beneath it doesn't. Everything
         // else (keys, time) goes to all.
         let pointer = matches!(event, Event::Mouse(_) | Event::Touch(_));
-        let covered = cursor.position().and_then(|at| {
-            let bounds: Vec<Rectangle> = layout.children().map(|child| child.bounds()).collect();
-            self.stacked()
-                .into_iter()
-                .filter(|i| bounds[*i].contains(at))
-                .next_back()
-        });
+        let bounds: Vec<Rectangle> = layout.children().map(|child| child.bounds()).collect();
+        let covered = cursor.position().and_then(|at| self.topmost(&bounds, at));
         // Reported once a frame while the app knows something else: a report
         // the runtime drops (it does, while a popup is being built) is tried
         // again next frame, and none go out once the app has caught up.
@@ -186,6 +230,9 @@ impl<Message: Clone> Widget<Message, cosmic::Theme, cosmic::Renderer> for Placed
                 shell.publish(message.clone());
             }
         }
+        let cursors: Vec<mouse::Cursor> = (0..self.children.len())
+            .map(|i| self.cursor_for(i, covered, cursor))
+            .collect();
         for (i, ((child, state), layout)) in self
             .children
             .iter_mut()
@@ -200,7 +247,7 @@ impl<Message: Clone> Widget<Message, cosmic::Theme, cosmic::Renderer> for Placed
                 continue;
             }
             child.as_widget_mut().update(
-                state, event, layout, cursor, renderer, clipboard, shell, viewport,
+                state, event, layout, cursors[i], renderer, clipboard, shell, viewport,
             );
         }
         if let (Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)), Some(message)) =
@@ -233,6 +280,8 @@ impl<Message: Clone> Widget<Message, cosmic::Theme, cosmic::Renderer> for Placed
         // lower one whatever they draw: within a layer the renderer paints
         // images over quads, and the panes hold images.
         let layouts: Vec<Layout<'_>> = layout.children().collect();
+        let bounds: Vec<Rectangle> = layouts.iter().map(|l| l.bounds()).collect();
+        let covered = cursor.position().and_then(|at| self.topmost(&bounds, at));
         for i in self.stacked() {
             let (child, state, layout) = (&self.children[i], &tree.children[i], layouts[i]);
             let bounds = layout.bounds();
@@ -243,6 +292,7 @@ impl<Message: Clone> Widget<Message, cosmic::Theme, cosmic::Renderer> for Placed
                 height: bounds.height + 32.0,
             };
             renderer.with_layer(roomy, |renderer| {
+                let cursor = self.cursor_for(i, covered, cursor);
                 child
                     .as_widget()
                     .draw(state, renderer, theme, style, layout, cursor, viewport);
@@ -258,11 +308,15 @@ impl<Message: Clone> Widget<Message, cosmic::Theme, cosmic::Renderer> for Placed
         viewport: &Rectangle,
         renderer: &cosmic::Renderer,
     ) -> mouse::Interaction {
+        let bounds: Vec<Rectangle> = layout.children().map(|l| l.bounds()).collect();
+        let covered = cursor.position().and_then(|at| self.topmost(&bounds, at));
         self.children
             .iter()
             .zip(&tree.children)
             .zip(layout.children())
-            .map(|((child, state), layout)| {
+            .enumerate()
+            .map(|(i, ((child, state), layout))| {
+                let cursor = self.cursor_for(i, covered, cursor);
                 child
                     .as_widget()
                     .mouse_interaction(state, layout, cursor, viewport, renderer)

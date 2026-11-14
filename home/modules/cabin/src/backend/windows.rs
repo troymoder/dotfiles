@@ -23,13 +23,13 @@ use cosmic::{
     cctk::{
         self,
         cosmic_protocols::{
-            workspace::v2::client::zcosmic_workspace_handle_v2::{
-                self, State as CosmicWorkspaceFlags,
-            },
             toplevel_info::v1::client::zcosmic_toplevel_handle_v1::{
                 State as Flag, ZcosmicToplevelHandleV1,
             },
             toplevel_management::v1::client::zcosmic_toplevel_manager_v1::ZcosmicToplelevelManagementCapabilitiesV1,
+            workspace::v2::client::zcosmic_workspace_handle_v2::{
+                self, State as CosmicWorkspaceFlags,
+            },
         },
         sctk::{
             self,
@@ -212,7 +212,9 @@ fn run(commands: calloop::channel::Channel<Command>, tx: mpsc::Sender<Event>) {
                     state.send();
                 }
             }
-            calloop::channel::Event::Msg(Command::Close(handle)) => state.manager.manager.close(&handle),
+            calloop::channel::Event::Msg(Command::Close(handle)) => {
+                state.manager.manager.close(&handle)
+            }
             calloop::channel::Event::Msg(Command::ActivateWorkspace(handle)) => {
                 handle.activate();
                 match state.workspaces.workspace_manager().get() {
@@ -247,7 +249,9 @@ fn run(commands: calloop::channel::Channel<Command>, tx: mpsc::Sender<Event>) {
                         .manager
                         .move_to_ext_workspace(&window, &workspace, &output);
                 } else {
-                    tracing::warn!("windows: this compositor can't move windows between workspaces");
+                    tracing::warn!(
+                        "windows: this compositor can't move windows between workspaces"
+                    );
                 }
             }
             calloop::channel::Event::Closed => state.running = false,

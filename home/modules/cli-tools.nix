@@ -15,9 +15,10 @@ in {
       # Editor
       (noDesktopEntry neovim)
 
-      # System monitoring (no launcher entries for terminal tools)
+      # System monitoring (no launcher entries for terminal tools, but btop
+      # keeps its own: it opens in a terminal from the launcher)
       (noDesktopEntry htop)
-      (noDesktopEntry btop)
+      btop
 
       # Modern replacements
       eza

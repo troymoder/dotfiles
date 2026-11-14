@@ -25,6 +25,26 @@ in {
 
     # Flatpak-only store; ghostty/neovim replace the terminal and editor;
     # COSMIC Settings covers networking, so no nm-connection-editor.
-    environment.cosmic.excludePackages = with pkgs; [cosmic-store cosmic-term cosmic-edit networkmanagerapplet];
+    # Cabin's overview replaces the workspace overview, the launcher (and
+    # pop-launcher behind it) and the app library, and its panels the system
+    # monitor; the wallpaper is our own, the on-screen keyboard is never
+    # turned on and there's no first-boot setup to run. cosmic-session
+    # starts some of these itself: a missing one is a single log line.
+    environment.cosmic.excludePackages = with pkgs; [
+      cosmic-store
+      cosmic-term
+      cosmic-edit
+      networkmanagerapplet
+      cosmic-workspaces-epoch
+      cosmic-launcher
+      pop-launcher
+      cosmic-app-library
+      cosmic-monitor
+      cosmic-wallpapers
+      cosmic-osk
+      cosmic-initial-setup
+    ];
+    # Several of those are "core"; leaving them out is on purpose.
+    services.desktopManager.cosmic.showExcludedPkgsWarning = false;
   };
 }

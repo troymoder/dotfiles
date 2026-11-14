@@ -274,8 +274,18 @@ impl App {
             }
             capture::Event::Recorded(path) => {
                 match copy_file(&path) {
-                    Ok(()) => tell("Recording copied", &format!("Saved to {}", path.display()), Some(&path), false),
-                    Err(err) => tell("Recording saved, not copied", &format!("wl-copy: {err}"), Some(&path), false),
+                    Ok(()) => tell(
+                        "Recording copied",
+                        &format!("Saved to {}", path.display()),
+                        Some(&path),
+                        false,
+                    ),
+                    Err(err) => tell(
+                        "Recording saved, not copied",
+                        &format!("wl-copy: {err}"),
+                        Some(&path),
+                        false,
+                    ),
                 }
                 std::process::exit(0)
             }
@@ -1212,9 +1222,16 @@ fn save_shot(image: &::image::RgbaImage, crop: Rect) -> Result<(PathBuf, Option<
 /// A file on the clipboard the way a file manager puts it there, as a URI
 /// list: chat apps, browsers and file managers paste it as the file.
 fn copy_file(path: &Path) -> std::io::Result<()> {
-    let mut wl_copy = std::process::Command::new("wl-copy").args(["--type", "text/uri-list"]).stdin(std::process::Stdio::piped()).spawn()?;
+    let mut wl_copy = std::process::Command::new("wl-copy")
+        .args(["--type", "text/uri-list"])
+        .stdin(std::process::Stdio::piped())
+        .spawn()?;
     // Dropped once written: wl-copy takes the end of its input as the cue to serve it.
-    wl_copy.stdin.take().expect("piped").write_all(format!("{}\r\n", file_uri(path)).as_bytes())?;
+    wl_copy
+        .stdin
+        .take()
+        .expect("piped")
+        .write_all(format!("{}\r\n", file_uri(path)).as_bytes())?;
     match wl_copy.wait()? {
         status if status.success() => Ok(()),
         status => Err(std::io::Error::other(status.to_string())),

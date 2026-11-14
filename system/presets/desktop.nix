@@ -15,4 +15,7 @@
     yubikey.enable = lib.mkDefault true;
     ssh.enable = lib.mkDefault true;
   };
+
+  # nm-online blocks network-online.target ~28s at boot, holding up tailscaled; laptops don't need it
+  systemd.services.NetworkManager-wait-online.enable = lib.mkDefault false;
 }

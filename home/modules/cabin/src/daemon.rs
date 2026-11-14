@@ -21,10 +21,7 @@ use cosmic::{
     Element, Task, app,
     iced::{
         self, Alignment, Background, Color, Length, Limits, Point, Rectangle, Size, Subscription,
-        event::{
-            self, PlatformSpecific,
-            wayland::{Event as WaylandEvent, LayerEvent},
-        },
+        event,
         platform_specific::shell::commands::{
             blur::blur,
             keyboard_shortcuts_inhibit::inhibit_shortcuts,
@@ -152,6 +149,10 @@ pub enum Message {
     /// The live pictures' thread: its ear, or a picture while the overview
     /// or Super+Tab shows them.
     Live(live::Event),
+    /// A key down: for the switcher or the overview, whichever shows.
+    Key(iced::keyboard::Key, iced::keyboard::Modifiers),
+    /// The apps, read again, and the dock's pinned ones.
+    Apps(Vec<backend::apps::App>, Vec<String>),
     Done,
 }
 
@@ -199,6 +200,9 @@ pub struct Daemon {
     /// take them.
     live_commands: Option<calloop::channel::SyncSender<bool>>,
     live_on: bool,
+    /// The apps the overview's dock and search show, and the pinned ones.
+    apps: Vec<backend::apps::App>,
+    favorites: Vec<String>,
 }
 
 /// A task of a part's, as the daemon's.
@@ -286,7 +290,10 @@ impl Daemon {
     /// The parts told what shows; the overlay made, unmade or set to take
     /// input as it should; the buttons told their bars.
     fn sync(&mut self) -> app::Task<Message> {
-        if std::mem::take(&mut self.controls.wants_close) && self.current == Some(Owner::Controls) {
+        // The controls draw the System panel too.
+        if std::mem::take(&mut self.controls.wants_close)
+            && matches!(self.current, Some(Owner::Controls | Owner::System))
+        {
             self.current = None;
         }
         if std::mem::take(&mut self.controls.wants_open) {
@@ -655,29 +662,47 @@ impl Daemon {
     /// while a surface by that name shows, cosmic-comp draws no windows on
     /// its output (the desktop shows through), leaves it out of workspace
     /// pictures, and switches workspaces without sliding.
-    fn toggle_overview(&mut self) -> app::Task<Message> {
-        if self.overview.is_some() {
+    /// The launcher (`light`; the app library with every app) goes over
+    /// everything, on the overlay, under a name of its own: the windows
+    /// stay, and it takes no pictures. Asked for while another one's up, it
+    /// takes its place.
+    fn toggle_overview(&mut self, apps: bool, light: bool) -> app::Task<Message> {
+        if self
+            .overview
+            .as_ref()
+            .is_some_and(|o| o.light == light && o.all_apps == apps)
+        {
             return self.close_overview(None);
         }
+        let other = self.close_overview(None);
         self.current = None;
         let id = window::Id::unique();
         let order = self.windows.iter().map(|w| w.id.clone()).collect();
-        self.overview = Some(Overview::new(id, order));
+        let mut overview = Overview::new(id, order, light);
+        overview.all_apps = apps;
+        self.overview = Some(overview);
         // At once: its live pictures (the thread is warm) come before the
         // surface is up, about 120 ms; the update's end tells the thread.
-        get_layer_surface(SctkLayerSurfaceSettings {
+        let surface = get_layer_surface(SctkLayerSurfaceSettings {
             id,
-            layer: Layer::Top,
+            layer: if light { Layer::Overlay } else { Layer::Top },
             keyboard_interactivity: KeyboardInteractivity::Exclusive,
             input_zone: None,
             anchor: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
             output: IcedOutput::Active,
-            namespace: "cosmic-workspace-overview".into(),
+            namespace: if light {
+                "cabin-launcher"
+            } else {
+                "cosmic-workspace-overview"
+            }
+            .into(),
             exclusive_zone: 0,
             size: Some((None, None)),
             size_limits: Limits::NONE.min_width(1.0).min_height(1.0),
             ..Default::default()
-        })
+        });
+        // The apps read again (installed or removed since), in the background.
+        Task::batch([other, surface, Self::load_apps()])
     }
 
     /// The overview down, then `raise` raised.
@@ -704,7 +729,37 @@ impl Daemon {
         }))
     }
 
+    /// An overview message handled; if it changed the query, the new one
+    /// looked up (once typing stops, for fd), and what the old one found
+    /// dropped unless it's of the same kind (a folder's list stands until
+    /// the next one's in).
     fn overview_update(&mut self, message: overview::Message) -> app::Task<Message> {
+        let before = self.overview.as_ref().map(|o| o.query.clone());
+        let task = self.overview_handle(message);
+        let Some(overview) = self.overview.as_mut() else {
+            return task;
+        };
+        if before.as_ref() == Some(&overview.query) {
+            return task;
+        }
+        let wait = backend::search::wait(&overview.query);
+        if wait.is_none()
+            || !before.is_some_and(|b| backend::search::same_kind(&b, &overview.query))
+        {
+            overview.hits.clear();
+        }
+        let Some(wait) = wait else {
+            return task;
+        };
+        let query = overview.query.clone();
+        let lookup = Task::future(async move {
+            tokio::time::sleep(wait).await;
+            cosmic::action::app(Message::Overview(overview::Message::Lookup(query)))
+        });
+        Task::batch([task, lookup])
+    }
+
+    fn overview_handle(&mut self, message: overview::Message) -> app::Task<Message> {
         use overview::Message as M;
         let Some(overview) = self.overview.as_mut() else {
             return Task::none();
@@ -731,20 +786,148 @@ impl Daemon {
                     overview.hover = None;
                 }
             }
-            // The launcher takes the keyboard once it's up; till then the
-            // keys come here and go on to it (it adds them up).
-            M::Typed(text) => {
-                overview.typed = true;
-                backend::spawn("cosmic-launcher", &["input", &text], &[]);
+            M::Query(text) => {
+                overview.query = text;
+                overview.picked = 0;
             }
-            M::Focus(id, true) if id == overview.id => overview.focused = true,
-            // Lost to the launcher that typing brought up: out of its way.
-            // Lost any other way (a press on the bar takes it a moment, a
-            // panel of ours opened from there takes it): it stays.
-            M::Focus(id, false) if id == overview.id && overview.focused && overview.typed => {
+            M::Typed(text) => {
+                overview.query.push_str(&text);
+                overview.picked = 0;
+                return focus_search(true);
+            }
+            M::FocusSearch => return focus_search(true),
+            M::Clear => {
+                overview.query.clear();
+                overview.picked = 0;
+                return focus_search(false);
+            }
+            M::Pick(by) | M::PickRow(by) => {
+                let row = matches!(message, M::PickRow(_));
+                let found = overview.found(&self.apps, &self.windows);
+                let (n, columns) = (found.len(), overview.columns(&found));
+                drop(found);
+                if n > 0 {
+                    let from = overview.picked.min(n - 1) as i32;
+                    // A step goes round the ends; a row stops at them.
+                    overview.picked = if row {
+                        (from + by * columns as i32).clamp(0, n as i32 - 1) as usize
+                    } else {
+                        (from + by).rem_euclid(n as i32) as usize
+                    };
+                }
+            }
+            M::Enter | M::Choose(_) => {
+                let found = overview.found(&self.apps, &self.windows);
+                let picked = match message {
+                    M::Choose(i) => i,
+                    _ => overview.picked.min(found.len().saturating_sub(1)),
+                };
+                if let Some(press) = found.get(picked).map(overview::Found::press) {
+                    drop(found);
+                    return self.overview_handle(press);
+                }
+            }
+            M::Tab(back) => {
+                // In a folder, a folder or file picked completes the search.
+                let completed = match backend::search::mode(&overview.query) {
+                    backend::search::Mode::Files(_) => {
+                        let found = overview.found(&self.apps, &self.windows);
+                        match found.get(overview.picked.min(found.len().saturating_sub(1))) {
+                            Some(overview::Found::Hit(backend::search::Hit::File(path, dir))) => {
+                                Some(backend::search::complete(&overview.query, path, *dir))
+                            }
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                };
+                let Some(completed) = completed else {
+                    return self.overview_handle(M::Pick(if back { -1 } else { 1 }));
+                };
+                overview.query = completed;
+                overview.picked = 0;
+                return focus_search(true);
+            }
+            M::Lookup(query) if query == overview.query => {
+                return Task::future(async move {
+                    let hits = tokio::task::spawn_blocking({
+                        let query = query.clone();
+                        move || backend::search::lookup(&query)
+                    })
+                    .await
+                    .unwrap_or_default();
+                    cosmic::action::app(Message::Overview(M::Hits(query, hits)))
+                });
+            }
+            M::Hits(query, hits) if query == overview.query => overview.hits = hits,
+            M::Lookup(_) | M::Hits(..) => {}
+            M::Copy(answer) => {
+                // wl-copy stays to serve it.
+                backend::spawn("wl-copy", &["--", &answer], &[]);
                 return self.close_overview(None);
             }
-            M::Focus(..) => {}
+            M::Open(path) => {
+                backend::spawn("xdg-open", &[&path.to_string_lossy()], &[]);
+                return self.close_overview(None);
+            }
+            M::Run(command, terminal) => {
+                backend::search::run(&command, terminal);
+                return self.close_overview(None);
+            }
+            M::Web(url) => return self.open_web(&url),
+            M::Shortcut(shortcut) => {
+                overview.query = shortcut;
+                overview.picked = 0;
+                return focus_search(true);
+            }
+            M::ToggleApps => {
+                overview.all_apps = !overview.all_apps;
+                overview.query.clear();
+                overview.picked = 0;
+                return focus_search(false);
+            }
+            M::DockMenu(key) => {
+                if has_menu(&self.apps, &self.windows, &key) {
+                    overview.menu = Some(overview::Menu { key, at: None });
+                }
+            }
+            M::ResultMenu(key) => {
+                if has_menu(&self.apps, &self.windows, &key) {
+                    let at = Some(overview.cursor);
+                    overview.menu = Some(overview::Menu { key, at });
+                }
+            }
+            M::CloseMenu => overview.menu = None,
+            M::RaiseWindow(id) => {
+                let handle = self
+                    .windows
+                    .iter()
+                    .find(|w| w.id == id)
+                    .map(|w| w.handle.clone());
+                return self.close_overview(handle);
+            }
+            M::AppAction(key, index) => {
+                if let Some(app) = self.apps.iter().find(|a| a.id == key) {
+                    app.launch_action(index);
+                }
+                return self.close_overview(None);
+            }
+            M::Quit(key) => {
+                overview.menu = None;
+                let app = self.apps.iter().find(|a| a.id == key);
+                let handles: Vec<_> = self
+                    .windows
+                    .iter()
+                    .filter(|w| {
+                        app.map_or(w.app_id.eq_ignore_ascii_case(&key), |a| a.owns(&w.app_id))
+                    })
+                    .map(|w| w.handle.clone())
+                    .collect();
+                for handle in handles {
+                    self.send_window(windows::Command::Close(handle));
+                }
+            }
+            M::App(key) => return self.open_app(&key),
             M::Scroll(delta) => {
                 let by = overview.scrolled(delta, std::time::Instant::now());
                 if by != 0 {
@@ -825,9 +1008,48 @@ impl Daemon {
         self.send_window(windows::Command::ActivateWorkspace(handle));
     }
 
+    /// An app from the overview (its id, or a window's app id): its window
+    /// used last raised, or the app started; the overview goes either way.
+    fn open_app(&mut self, key: &str) -> app::Task<Message> {
+        let app = self.apps.iter().find(|a| a.id == key);
+        let window = self
+            .windows
+            .iter()
+            .find(|w| app.map_or(w.app_id.eq_ignore_ascii_case(key), |a| a.owns(&w.app_id)));
+        match (window, app) {
+            (Some(window), _) => {
+                let handle = window.handle.clone();
+                self.close_overview(Some(handle))
+            }
+            (None, Some(app)) => {
+                app.launch();
+                self.close_overview(None)
+            }
+            (None, None) => Task::none(),
+        }
+    }
+
+    /// A web search opened in the browser; the overview goes.
+    fn open_web(&mut self, url: &str) -> app::Task<Message> {
+        backend::spawn("xdg-open", &[url], &[]);
+        self.close_overview(None)
+    }
+
+    /// The apps and the dock's pinned ones, read again off the main loop.
+    fn load_apps() -> app::Task<Message> {
+        Task::future(async {
+            let loaded =
+                tokio::task::spawn_blocking(|| (backend::apps::all(), backend::apps::favorites()))
+                    .await
+                    .unwrap_or_default();
+            cosmic::action::app(Message::Apps(loaded.0, loaded.1))
+        })
+    }
+
     /// Whether something shows live pictures.
     fn live(&self) -> bool {
-        self.overview.is_some() || self.switcher.as_ref().is_some_and(|s| s.previews)
+        self.overview.as_ref().is_some_and(|o| !o.light)
+            || self.switcher.as_ref().is_some_and(|s| s.previews)
     }
 
     fn send_window(&self, command: windows::Command) {
@@ -864,7 +1086,8 @@ impl Daemon {
             }
             Request::Close => self.current = None,
             Request::Switch(step, previews) => return self.open_switcher(step, previews),
-            Request::Overview => return self.toggle_overview(),
+            Request::Overview => return self.toggle_overview(false, false),
+            Request::Launcher(apps) => return self.toggle_overview(apps, true),
             Request::Volume(steps) => {
                 let step = lift(
                     self.controls.update(controls::Message::ScrollVolume(
@@ -1072,6 +1295,28 @@ impl OsdRail {
     }
 }
 
+/// Whether the app (by key) has a menu worth opening: windows to go to, or
+/// actions of its own. One with neither would be an empty card.
+fn has_menu(apps: &[backend::apps::App], windows: &[windows::Window], key: &str) -> bool {
+    let app = apps.iter().find(|a| a.id == key);
+    app.is_some_and(|a| !a.actions.is_empty())
+        || windows
+            .iter()
+            .any(|w| app.map_or(w.app_id.eq_ignore_ascii_case(key), |a| a.owns(&w.app_id)))
+}
+
+/// The overview's search given the keys, its cursor at the end of what's
+/// in it if `to_end` (after a character typed while it didn't have them).
+fn focus_search(to_end: bool) -> app::Task<Message> {
+    let id = overview::SEARCH.clone();
+    let focus = widget::text_input::focus(id.clone());
+    if to_end {
+        Task::batch([focus, widget::text_input::move_cursor_to_end(id)])
+    } else {
+        focus
+    }
+}
+
 /// The switcher told when Alt or Super should have been seen held.
 fn switcher_late(id: window::Id) -> app::Task<Message> {
     Task::future(async move {
@@ -1141,8 +1386,10 @@ impl cosmic::Application for Daemon {
             pictures: Default::default(),
             live_commands: None,
             live_on: false,
+            apps: Vec::new(),
+            favorites: Vec::new(),
         };
-        (daemon, Task::batch([font, debug_open()]))
+        (daemon, Task::batch([font, debug_open(), Self::load_apps()]))
     }
 
     fn style(&self) -> Option<iced::theme::Style> {
@@ -1158,6 +1405,10 @@ impl cosmic::Application for Daemon {
             Message::Controls(message) => lift(self.controls.update(message), Message::Controls),
             Message::Clock(message) => lift(self.clock.update(message), Message::Clock),
             Message::Bus(request) => self.handle(request),
+            // The overview's surface up: its search takes the keys.
+            Message::Configured(id, _) if self.overview.as_ref().is_some_and(|o| o.id == id) => {
+                focus_search(false)
+            }
             Message::Configured(id, size) => {
                 if Some(id) == self.overlay {
                     self.size = Some(size);
@@ -1224,7 +1475,47 @@ impl cosmic::Application for Daemon {
                 self.overview_release()
             }
             Message::Escape if self.switcher.is_some() => self.close_switcher(false),
+            // One thing at a time: a menu closes, a search clears, every
+            // app gives way to the windows (the input let go of the keys on
+            // Escape: it takes them back); then the overview closes. The
+            // launcher just closes.
+            Message::Escape
+                if self.overview.as_ref().is_some_and(|o| {
+                    o.menu.is_some() || (!o.light && (!o.query.is_empty() || o.all_apps))
+                }) =>
+            {
+                if let Some(overview) = &mut self.overview {
+                    if overview.menu.take().is_none() {
+                        if overview.query.is_empty() {
+                            overview.all_apps = false;
+                        }
+                        overview.query.clear();
+                        overview.picked = 0;
+                    }
+                }
+                focus_search(false)
+            }
             Message::Escape if self.overview.is_some() => self.close_overview(None),
+            Message::Key(key, modifiers) => {
+                if self.switcher.is_some() {
+                    match switcher::key(&key, modifiers) {
+                        Some(message) => self.switcher_update(message),
+                        None => Task::none(),
+                    }
+                } else if self.overview.is_some() {
+                    match overview::key(&key, modifiers) {
+                        Some(message) => self.overview_update(message),
+                        None => Task::none(),
+                    }
+                } else {
+                    Task::none()
+                }
+            }
+            Message::Apps(apps, favorites) => {
+                self.apps = apps;
+                self.favorites = favorites;
+                Task::none()
+            }
             Message::Escape => match self.current {
                 Some(Owner::Controls) => lift(
                     self.controls.update(controls::Message::Escape),
@@ -1314,7 +1605,9 @@ impl cosmic::Application for Daemon {
                 // it opened (a tray icon showing its window) goes at the end
                 // and stays there, focused or not; gone ones drop out.
                 if let Some(overview) = &mut self.overview {
-                    overview.order.retain(|id| self.windows.iter().any(|w| &w.id == id));
+                    overview
+                        .order
+                        .retain(|id| self.windows.iter().any(|w| &w.id == id));
                     for w in &self.windows {
                         if !overview.order.contains(&w.id) {
                             overview.order.push(w.id.clone());
@@ -1384,7 +1677,13 @@ impl cosmic::Application for Daemon {
             switcher.view(&self.pictures).map(Message::Switcher)
         } else if let Some(overview) = self.overview.as_ref().filter(|o| o.id == id) {
             overview
-                .view(&self.windows, &self.workspaces, &self.pictures)
+                .view(
+                    &self.windows,
+                    &self.workspaces,
+                    &self.pictures,
+                    &self.apps,
+                    &self.favorites,
+                )
                 .map(Message::Overview)
         } else {
             widget::text("").into()
@@ -1400,7 +1699,7 @@ impl cosmic::Application for Daemon {
             // Always: the thread stays warm, taking pictures only when told.
             live::subscription().map(Message::Live),
             window::resize_events().map(|(id, size)| Message::Configured(id, size)),
-            event::listen_with(|event, _, id| match event {
+            event::listen_with(|event, status, id| match event {
                 iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
                     Some(Message::Cursor(id, position))
                 }
@@ -1411,19 +1710,19 @@ impl cosmic::Application for Daemon {
                     key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
                     ..
                 }) => Some(Message::Escape),
+                // Ctrl and a digit picks a search result even while the
+                // search has the keys: it takes every key, but types
+                // nothing with Ctrl held.
                 iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
                     key, modifiers, ..
-                }) => switcher::key(&key, modifiers)
-                    .map(Message::Switcher)
-                    .or_else(|| overview::typed(&key, modifiers).map(Message::Overview)),
-                iced::Event::PlatformSpecific(PlatformSpecific::Wayland(WaylandEvent::Layer(
-                    focus @ (LayerEvent::Focused | LayerEvent::Unfocused),
-                    _,
-                    id,
-                ))) => Some(Message::Overview(overview::Message::Focus(
-                    id,
-                    matches!(focus, LayerEvent::Focused),
-                ))),
+                }) if modifiers.control() && overview::chosen(&key).is_some() => {
+                    Some(Message::Key(key, modifiers))
+                }
+                // Only keys no widget took: a focused text input (the
+                // overview's search, a password) keeps its own.
+                iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                    key, modifiers, ..
+                }) if status == event::Status::Ignored => Some(Message::Key(key, modifiers)),
                 iced::Event::Keyboard(iced::keyboard::Event::ModifiersChanged(modifiers)) => Some(
                     Message::Switcher(switcher::Message::Modifiers(id, modifiers)),
                 ),

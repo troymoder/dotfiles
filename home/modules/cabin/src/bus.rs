@@ -71,6 +71,9 @@ pub enum Request {
     Switch(i32, bool),
     /// The workspace overview up, or down if it's up.
     Overview,
+    /// The launcher up, or down if it's up; the app library (every app
+    /// listed) if asked.
+    Launcher(bool),
     /// A notification, as the clock button had it from the panel.
     Notified(Box<crate::backend::notifications::Notification>),
     NotificationClosed(u32),
@@ -175,6 +178,10 @@ impl Server {
 
     fn overview(&self) -> zbus::fdo::Result<()> {
         self.send(Request::Overview)
+    }
+
+    fn launcher(&self, apps: bool) -> zbus::fdo::Result<()> {
+        self.send(Request::Launcher(apps))
     }
 
     /// The bar a button draws (`status`, `clock`, `system`), as JSON.
@@ -298,6 +305,7 @@ pub trait Cabin {
     fn volume(&self, steps: f64) -> zbus::Result<()>;
     fn switch(&self, step: i32, previews: bool) -> zbus::Result<()>;
     fn overview(&self) -> zbus::Result<()>;
+    fn launcher(&self, apps: bool) -> zbus::Result<()>;
     fn bar(&self, kind: &str) -> zbus::Result<String>;
     fn notified(&self, notification: &str) -> zbus::Result<()>;
     fn notification_closed(&self, id: u32) -> zbus::Result<()>;

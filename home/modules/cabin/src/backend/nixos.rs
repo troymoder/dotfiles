@@ -83,6 +83,90 @@ pub fn read() -> Option<NixOs> {
     })
 }
 
+/// A derivation the Nix daemon is building right now.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Build {
+    /// Its builder, nix-daemon's child.
+    pub pid: u32,
+    /// The derivation's name: "linux-6.12.10".
+    pub name: String,
+    /// When its builder started.
+    pub started: std::time::SystemTime,
+    /// Its processes' share of the whole machine's CPU, in percent.
+    pub cpu: f32,
+    /// Its processes' resident memory, in bytes.
+    pub memory: u64,
+    /// The program using the most of its CPU: "cc1plus". None while it
+    /// uses none.
+    pub busiest: Option<String>,
+}
+
+/// The derivation a sandboxed builder (a child of nix-daemon) works on,
+/// from its `/proc/<pid>/mountinfo`, which anyone may read: its root is
+/// the chroot "/nix/store/<hash>-<name>.drv.chroot".
+pub fn build_name(mountinfo: &str) -> Option<String> {
+    mountinfo.lines().find_map(|line| {
+        let mut fields = line.split(' ').skip(3);
+        let (root, point) = (fields.next()?, fields.next()?);
+        if point != "/" {
+            return None;
+        }
+        let chroot = root.rsplit('/').next()?.strip_suffix(".drv.chroot")?;
+        Some(chroot.split_once('-')?.1.to_owned())
+    })
+}
+
+/// btop with the CPU over its process list as a tree, saving nothing: the
+/// user's own settings stay as they are. Not the process list alone: btop
+/// 1.4.8 then paints its "No boxes shown!" screen over it at the first
+/// click (an unchanged list redraws to nothing, and only the CPU box's
+/// clock keeps a frame from being empty). No GPU readout: it could wake
+/// the sleeping dGPU.
+const BTOP_CONFIG: &str = "shown_boxes = \"cpu proc\"\nproc_tree = true\nshow_gpu_info = \"Off\"\n\
+    save_config_on_exit = false\nupdate_ms = 1000\n";
+
+/// A terminal with btop on a build's processes: every build runs as its
+/// own build user (nixbld1, …), so they're that user's.
+pub fn inspect(build: &Build) {
+    use std::os::unix::fs::MetadataExt;
+    // The build may have just ended.
+    let Ok(uid) = std::fs::metadata(format!("/proc/{}", build.pid)).map(|meta| meta.uid()) else {
+        return;
+    };
+    let uid = uid.to_string();
+    let user = std::fs::read_to_string("/etc/passwd")
+        .ok()
+        .and_then(|passwd| {
+            passwd.lines().find_map(|line| {
+                let mut fields = line.split(':');
+                let name = fields.next()?;
+                (fields.nth(1)? == uid).then(|| name.to_owned())
+            })
+        })
+        .unwrap_or(uid);
+    let config = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("cabin-btop.conf");
+    if let Err(err) = std::fs::write(&config, BTOP_CONFIG) {
+        return tracing::error!("cannot write {}: {err}", config.display());
+    }
+    // A regex, so nixbld1 doesn't take in nixbld10's processes too.
+    super::spawn(
+        "ghostty",
+        &[
+            &format!("--title=Building {}", build.name),
+            "-e",
+            "btop",
+            "-c",
+            &config.to_string_lossy(),
+            "-f",
+            &format!("!^{user}$"),
+        ],
+        &[],
+    );
+}
+
 /// How old the nixpkgs lock may get before it's time to update.
 pub const STALE_DAYS: i64 = 14;
 
@@ -161,6 +245,17 @@ mod tests {
         assert_eq!(
             kernel_version(Path::new("/nix/store/abc-linux-6.12.10/bzImage")).as_deref(),
             Some("6.12.10")
+        );
+    }
+
+    #[test]
+    fn builds_from_mounts() {
+        let mounts = "1476 1446 254:1 /nix/store/3z680dlqpjp9xfs94wqpbf352p206r2y-cabin-probe-1.drv.chroot / rw,relatime - xfs /dev/mapper/vg0-root rw\n\
+            1477 1476 254:1 /nix/store/3z680dlqpjp9xfs94wqpbf352p206r2y-cabin-probe-1.drv.chroot/nix/store /nix/store rw - xfs /dev/mapper/vg0-root rw\n";
+        assert_eq!(build_name(mounts).as_deref(), Some("cabin-probe-1"));
+        assert_eq!(
+            build_name("22 1 0:21 / / rw,relatime - btrfs /dev/nvme0n1p2 rw\n"),
+            None
         );
     }
 }

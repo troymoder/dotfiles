@@ -5,11 +5,11 @@
 //! talks to a daemon.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use cosmic::iced::{Subscription, stream};
@@ -111,6 +111,8 @@ pub struct System {
     /// The programs using the most CPU, most first: read only while the
     /// System panel shows (sampling is fast then), else empty.
     pub processes: Vec<Process>,
+    /// The Nix builds running, oldest first: read along with `processes`.
+    pub builds: Vec<super::nixos::Build>,
 }
 
 /// A program's share of the machine, its processes added up.
@@ -503,6 +505,8 @@ struct Sampler {
     ticks: HashMap<u32, u64>,
     /// Each process's program, read once.
     names: HashMap<u32, String>,
+    /// When the machine booted, which process start times count from.
+    boot: SystemTime,
 }
 
 impl Sampler {
@@ -521,15 +525,17 @@ impl Sampler {
             up_history: Vec::new(),
             ticks: HashMap::new(),
             names: HashMap::new(),
+            boot: boot_time(),
         }
     }
 
-    /// The busiest programs since the last reading, while sampling is fast.
-    fn processes(&mut self, elapsed: f64) -> Vec<Process> {
+    /// The busiest programs since the last reading and the Nix builds
+    /// running, while sampling is fast.
+    fn processes(&mut self, elapsed: f64) -> (Vec<Process>, Vec<super::nixos::Build>) {
         if !FAST.load(Ordering::Relaxed) {
             self.ticks.clear();
             self.names.clear();
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         }
         // SAFETY: sysconf only reads a constant.
         let (hertz, page) = unsafe {
@@ -544,6 +550,10 @@ impl Sampler {
         let mut ticks = HashMap::new();
         let mut names = HashMap::new();
         let mut programs: HashMap<String, Process> = HashMap::new();
+        let mut daemons = HashSet::new();
+        // Every other process: pid, parent, start (ticks after boot), CPU
+        // and memory.
+        let mut others = Vec::new();
         for entry in fs::read_dir("/proc")
             .into_iter()
             .flatten()
@@ -552,7 +562,7 @@ impl Sampler {
             let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
                 continue;
             };
-            let Some((comm, used, rss)) = read(entry.path().join("stat"))
+            let Some((comm, parent, used, rss, start)) = read(entry.path().join("stat"))
                 .as_deref()
                 .and_then(parse_pid_stat)
             else {
@@ -566,6 +576,11 @@ impl Sampler {
                 Some(before) if seeded => used.saturating_sub(*before) as f64 / whole * 100.0,
                 _ => 0.0,
             };
+            if comm == "nix-daemon" {
+                daemons.insert(pid);
+            } else {
+                others.push((pid, parent, start, cpu as f32, rss * page));
+            }
             ticks.insert(pid, used);
             let name = self
                 .names
@@ -584,7 +599,67 @@ impl Sampler {
         let mut list: Vec<Process> = programs.into_values().collect();
         list.sort_by(|a, b| b.cpu.total_cmp(&a.cpu).then(b.memory.cmp(&a.memory)));
         list.truncate(5);
-        list
+        // A build is a nix-daemon's child in a derivation's sandbox, and
+        // every process under it.
+        let mut builds: HashMap<u32, super::nixos::Build> = others
+            .iter()
+            .filter(|(_, parent, ..)| daemons.contains(parent))
+            .filter_map(|&(pid, _, start, ..)| {
+                let mountinfo = read(format!("/proc/{pid}/mountinfo"))?;
+                Some((
+                    pid,
+                    super::nixos::Build {
+                        pid,
+                        name: super::nixos::build_name(&mountinfo)?,
+                        started: self.boot + Duration::from_secs_f64(start as f64 / hertz),
+                        cpu: 0.0,
+                        memory: 0,
+                        busiest: None,
+                    },
+                ))
+            })
+            .collect();
+        if !builds.is_empty() {
+            let parents: HashMap<u32, u32> = others
+                .iter()
+                .map(|&(pid, parent, ..)| (pid, parent))
+                .collect();
+            // Each build's CPU by program.
+            let mut programs: HashMap<(u32, &str), f32> = HashMap::new();
+            for &(pid, _, _, cpu, memory) in &others {
+                let mut at = pid;
+                // Capped: a snapshot taken while pids are reused could loop.
+                for _ in 0..64 {
+                    if let Some(build) = builds.get_mut(&at) {
+                        build.cpu += cpu;
+                        build.memory += memory;
+                        if let Some(name) = self.names.get(&pid) {
+                            *programs.entry((at, name.as_str())).or_default() += cpu;
+                        }
+                        break;
+                    }
+                    let Some(&up) = parents.get(&at) else {
+                        break;
+                    };
+                    at = up;
+                }
+            }
+            let mut busiest: HashMap<u32, (&str, f32)> = HashMap::new();
+            for ((build, name), cpu) in programs {
+                let best = busiest.entry(build).or_insert((name, 0.0));
+                if cpu > best.1 {
+                    *best = (name, cpu);
+                }
+            }
+            for (pid, (name, cpu)) in busiest {
+                if let Some(build) = builds.get_mut(&pid).filter(|_| cpu > 0.0) {
+                    build.busiest = Some(name.to_owned());
+                }
+            }
+        }
+        let mut builds: Vec<super::nixos::Build> = builds.into_values().collect();
+        builds.sort_by_key(|build| build.started);
+        (list, builds)
     }
 
     fn sample(&mut self) -> System {
@@ -611,6 +686,7 @@ impl Sampler {
             _ => None,
         };
         self.energy_uj = energy;
+        let (processes, builds) = self.processes(elapsed);
 
         System {
             cpu: Cpu {
@@ -635,7 +711,8 @@ impl Sampler {
                 .map(|rpm| rpm as u32),
             gpu_temp_c: self.sensors.gpu_temp(),
             nixos: super::nixos::read(),
-            processes: self.processes(elapsed),
+            processes,
+            builds,
         }
     }
 
@@ -734,18 +811,33 @@ impl Sampler {
     }
 }
 
-/// A process's name, CPU time (user and system, in ticks) and resident
-/// pages, from its `stat`. The name is in parentheses and may hold spaces.
-fn parse_pid_stat(stat: &str) -> Option<(String, u64, u64)> {
+/// A process's name, parent, CPU time (user and system, in ticks),
+/// resident pages and start (ticks after boot), from its `stat`. The name
+/// is in parentheses and may hold spaces.
+fn parse_pid_stat(stat: &str) -> Option<(String, u32, u64, u64, u64)> {
     let open = stat.find('(')?;
     let close = stat.rfind(')')?;
     let comm = stat.get(open + 1..close)?.to_owned();
-    // After the name, from the state (field 3): utime is field 14, stime 15, rss 24.
+    // After the name, from the state (field 3): ppid is field 4, utime 14,
+    // stime 15, starttime 22, rss 24.
     let fields: Vec<&str> = stat.get(close + 1..)?.split_whitespace().collect();
+    let parent: u32 = fields.get(1)?.parse().ok()?;
     let utime: u64 = fields.get(11)?.parse().ok()?;
     let stime: u64 = fields.get(12)?.parse().ok()?;
+    let start: u64 = fields.get(19)?.parse().ok()?;
     let rss: u64 = fields.get(21)?.parse().ok()?;
-    Some((comm, utime + stime, rss))
+    Some((comm, parent, utime + stime, rss, start))
+}
+
+/// The boot time from /proc/stat's `btime` line.
+fn boot_time() -> SystemTime {
+    let seconds = read("/proc/stat")
+        .and_then(|stat| {
+            stat.lines()
+                .find_map(|line| line.strip_prefix("btime ")?.trim().parse().ok())
+        })
+        .unwrap_or(0);
+    SystemTime::UNIX_EPOCH + Duration::from_secs(seconds)
 }
 
 /// The program a process runs: its command's file name (some programs
@@ -870,7 +962,7 @@ mod tests {
         let stat = "4242 (Web Content) S 1 4242 4242 0 -1 4194560 100 0 0 0 250 50 0 0 20 0 30 0 123456 2000000000 51200 18446744073709551615";
         assert_eq!(
             parse_pid_stat(stat),
-            Some(("Web Content".to_owned(), 300, 51200))
+            Some(("Web Content".to_owned(), 1, 300, 51200, 123456))
         );
         assert_eq!(parse_pid_stat("garbage"), None);
         assert_eq!(clean_program(".firefox-wrapped"), "firefox");

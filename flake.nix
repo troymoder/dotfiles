@@ -71,15 +71,11 @@
                 postBuild = "rm -rf $out/share/applications";
               };
 
-            # Launcher: drop the system76-power scripts (no such daemon here) and ship
-            # only the web search shortcuts in use.
-            pop-launcher = prev.pop-launcher.overrideAttrs (old: {
-              postInstall =
-                (old.postInstall or "")
-                + ''
-                  rm -r $out/share/pop-launcher/scripts/system76-power
-                  cp ${./system/launcher/web-shortcuts.ron} $out/share/pop-launcher/plugins/web/config.ron
-                '';
+            # Super+Up on a free-floating window maximizes it, and pressed again
+            # snaps it to the top half (upstream snaps first, then moves it on to
+            # the workspace above).
+            cosmic-comp = prev.cosmic-comp.overrideAttrs (old: {
+              patches = (old.patches or []) ++ [./patches/cosmic-comp-up-maximizes.patch];
             });
 
             sbctl = prev.sbctl.overrideAttrs (old: {

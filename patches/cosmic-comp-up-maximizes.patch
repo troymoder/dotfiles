@@ -1,0 +1,22 @@
+--- a/src/shell/layout/floating/mod.rs	2026-11-14 15:59:36.284501262 +0200
++++ b/src/shell/layout/floating/mod.rs	2026-11-14 15:59:36.298004794 +0200
+@@ -1258,11 +1258,16 @@
+                         ));
+                     }
+ 
+-                    // to we go maximized?
+-                    (Direction::Up, Some(TiledCorners::Bottom))
++                    // to we go maximized? Up does from free floating too:
++                    // maximized first, then (pressed again, below) the
++                    // top half.
++                    (Direction::Up, Some(TiledCorners::Bottom) | None)
+                     | (Direction::Down, Some(TiledCorners::Top))
+                     | (Direction::Left, Some(TiledCorners::Right))
+-                    | (Direction::Right, Some(TiledCorners::Left)) => {
++                    | (Direction::Right, Some(TiledCorners::Left))
++                        if tiled_state.is_some()
++                            || element.maximized_state.lock().unwrap().is_none() =>
++                    {
+                         std::mem::drop(tiled_state);
+ 
+                         let mut maximized_state = element.maximized_state.lock().unwrap();

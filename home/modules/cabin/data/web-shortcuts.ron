@@ -1,0 +1,35 @@
+// Web search shortcuts for Cabin's overview search: type the prefix, a space,
+// and the query. Once pop-launcher's web plugin config, same format, plus an
+// icon per engine: a name in Papirus' apps (64x64/apps/<icon>.svg).
+(
+    rules: [
+        (
+            matches: ["g", "gs", "google"],
+            queries: [(name: "Google", query: "google.com/search?q=", icon: "google")]
+        ),
+        (
+            matches: ["ddg"],
+            queries: [(name: "DuckDuckGo", query: "duckduckgo.com/?q=", icon: "duckduckgo")]
+        ),
+        (
+            matches: ["yt", "youtube"],
+            queries: [(name: "YouTube", query: "youtube.com/results?search_query=", icon: "youtube")]
+        ),
+        (
+            matches: ["gh", "github"],
+            queries: [(name: "GitHub", query: "github.com/search?q=", icon: "github")]
+        ),
+        (
+            matches: ["wiki"],
+            queries: [(name: "Wikipedia", query: "wikipedia.org/w/index.php?search=", icon: "wikipedia")]
+        ),
+        (
+            matches: ["nix", "nixpkgs"],
+            queries: [(name: "Nix packages", query: "search.nixos.org/packages?query=", icon: "nix-snowflake")]
+        ),
+        (
+            matches: ["nixo", "nixopts"],
+            queries: [(name: "NixOS options", query: "search.nixos.org/options?query=", icon: "nix-snowflake")]
+        ),
+    ],
+)

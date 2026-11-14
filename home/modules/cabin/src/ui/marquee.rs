@@ -14,6 +14,32 @@ use cosmic::iced::{
     window,
 };
 
+/// `text` on one line, as `style` sets it: cut short with an ellipsis, and
+/// rolling by while hovered if it doesn't fit; centred while still if
+/// `centred`.
+pub fn ticker<'a, M: 'a>(
+    text: String,
+    style: fn(String) -> super::text::Text<'a>,
+    centred: bool,
+) -> cosmic::Element<'a, M> {
+    use cosmic::iced::core::text::{Ellipsize, EllipsizeHeightLimit};
+    Marquee::new(move |short| {
+        let line = style(text.clone());
+        if !short {
+            return line.into();
+        }
+        let line = line.ellipsize(Ellipsize::End(EllipsizeHeightLimit::Lines(1)));
+        if centred {
+            line.width(Length::Fill)
+                .align_x(cosmic::iced::Alignment::Center)
+                .into()
+        } else {
+            line.into()
+        }
+    })
+    .into()
+}
+
 /// Pixels a second.
 const SPEED: f32 = 40.0;
 /// Between the end of the text and its start again.
@@ -103,9 +129,17 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for Marquee<'_, M
         let full = layout.children().nth(1).expect("the whole text");
         let overflow = full.bounds().width > bounds.width + 1.0;
         let hovered = cursor.is_over(bounds);
+        // Drawn again on either change: left alone, a ticker the pointer
+        // left stayed frozen mid-roll until something else redrew.
         match (hovered, state.hovered_since) {
-            (true, None) => state.hovered_since = Some(Instant::now()),
-            (false, Some(_)) => state.hovered_since = None,
+            (true, None) => {
+                state.hovered_since = Some(Instant::now());
+                shell.request_redraw();
+            }
+            (false, Some(_)) => {
+                state.hovered_since = None;
+                shell.request_redraw();
+            }
             _ => {}
         }
         if overflow && hovered {
@@ -154,6 +188,13 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for Marquee<'_, M
             for copy in [0.0, period] {
                 let x = copy - shift;
                 if x < bounds.width && x + width > 0.0 {
+                    // The translation moves the clip the text is drawn with
+                    // too: moved back, or the line's far end, the further it
+                    // rolls, falls outside it and isn't drawn.
+                    let viewport = Rectangle {
+                        x: viewport.x - x,
+                        ..*viewport
+                    };
                     renderer.with_translation(Vector::new(x, 0.0), |renderer| {
                         self.full.as_widget().draw(
                             &tree.children[1],
@@ -162,7 +203,7 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for Marquee<'_, M
                             style,
                             full,
                             cursor,
-                            viewport,
+                            &viewport,
                         );
                     });
                 }

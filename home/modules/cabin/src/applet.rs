@@ -347,9 +347,9 @@ impl cosmic::Application for Status {
                 );
             }
             Message::Surface(action) => {
-                return cosmic::task::message(cosmic::Action::Cosmic(cosmic::app::Action::Surface(
-                    action,
-                )));
+                return cosmic::task::message(cosmic::Action::Cosmic(
+                    cosmic::app::Action::Surface(action),
+                ));
             }
             Message::Settings(page) => return Self::settings(page),
             Message::Tick | Message::Notification(_) | Message::Invoke(..) | Message::Done => {}
@@ -638,9 +638,9 @@ impl cosmic::Application for System {
                 });
             }
             Message::Surface(action) => {
-                return cosmic::task::message(cosmic::Action::Cosmic(cosmic::app::Action::Surface(
-                    action,
-                )));
+                return cosmic::task::message(cosmic::Action::Cosmic(
+                    cosmic::app::Action::Surface(action),
+                ));
             }
             _ => {}
         }

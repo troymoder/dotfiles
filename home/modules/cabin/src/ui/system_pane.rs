@@ -439,10 +439,39 @@ impl App {
                         .warn(stale)
                         .view(),
                 );
+                for build in &system.builds {
+                    let seconds = build.started.elapsed().unwrap_or_default().as_secs();
+                    let took = if seconds < 60 {
+                        format!("{seconds} s")
+                    } else {
+                        crate::app::duration(seconds)
+                    };
+                    rows.push(
+                        Row::new(build.name.clone())
+                            .icon("hammer")
+                            .sub(
+                                [
+                                    Some(took),
+                                    Some(format!("{:.0} % CPU", build.cpu)),
+                                    Some(system::bytes(build.memory)),
+                                    build.busiest.clone(),
+                                ]
+                                .into_iter()
+                                .flatten()
+                                .collect::<Vec<_>>()
+                                .join(" · "),
+                            )
+                            .trailing(faint_icon("terminal"))
+                            .on_press(Message::InspectBuild(build.clone()))
+                            .view(),
+                    );
+                }
                 let summary = if nixos.reboot_pending {
                     "Reboot needed".to_owned()
                 } else if stale {
                     "Time to update".to_owned()
+                } else if !system.builds.is_empty() {
+                    format!("{} running", plural(system.builds.len(), "build"))
                 } else {
                     format!("Generation {}", nixos.generation)
                 };

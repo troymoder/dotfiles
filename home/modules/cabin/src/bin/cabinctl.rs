@@ -38,6 +38,13 @@ enum Command {
     },
     /// The workspace overview up, or down if it's up: what Super runs.
     Overview,
+    /// The launcher up, or down if it's up: what Super+/ runs. The
+    /// overview's search on its own, over the windows.
+    Launcher {
+        /// Every app listed: the app library (Super+A).
+        #[arg(long)]
+        apps: bool,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -101,6 +108,7 @@ async fn main() {
         Command::Close => daemon.close().await,
         Command::Volume { steps } => daemon.volume(steps).await,
         Command::Overview => daemon.overview().await,
+        Command::Launcher { apps } => daemon.launcher(apps).await,
         Command::Bar { kind } => daemon.bar(kind.name()).await.map(|bar| println!("{bar}")),
         Command::Switch {
             direction,

@@ -27,10 +27,12 @@ pub mod nixos;
 pub mod notifications;
 pub mod power;
 pub mod privacy;
+pub mod search;
 pub mod session;
 pub mod system;
 pub mod toplevels;
 pub mod weather;
+pub mod web;
 pub mod windows;
 
 use std::{pin::Pin, time::Duration};

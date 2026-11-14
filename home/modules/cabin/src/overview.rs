@@ -9,12 +9,26 @@
 //! A press on a card raises its window; its × closes it; dragged onto a
 //! workspace, it moves there. A press on another workspace switches to
 //! it, on the one showing closes the overview; a workspace's pin keeps it
-//! when it has no windows. The wheel steps through the workspaces, round and round.
-//! Typing hands the text to the launcher; Escape, Super again or a press
-//! on nothing closes.
+//! when it has no windows. The wheel steps through the workspaces, round
+//! and round.
+//!
+//! The dock at the bottom holds the pinned apps, then the others running:
+//! a press raises the app's last window, or starts it; a right press opens
+//! its menu (its windows, a new one, its own actions, quitting). The grid
+//! at its end shows every app. Typing searches the apps, at the top: their
+//! icons stand in for the cards, Enter starts the pick. Escape closes the
+//! menu, clears the search, leaves the apps, then closes the overview; so
+//! do Super again and a press on nothing.
+//!
+//! The search does more than apps (`backend::search`: sums, files, commands,
+//! `?` lists it all); for those it lists its finds in rows, not tiles. The
+//! launcher (Super+/) is the same search on its own, lighter: a card at the
+//! top over the windows, which stay, listing them first. With every app
+//! (Super+A) it's the app library: their grid in the card, no windows.
 
 use std::{
     collections::HashMap,
+    path::PathBuf,
     time::{Duration, Instant},
 };
 
@@ -22,16 +36,21 @@ use cosmic::{
     Element,
     iced::{
         self, Background, Color, Length, Point, Rectangle, Size, Vector,
-        platform_specific::shell::subsurface_widget::{Subsurface, SubsurfaceBuffer},
         keyboard::{Key, Modifiers},
         mouse::ScrollDelta,
+        platform_specific::shell::subsurface_widget::{Subsurface, SubsurfaceBuffer},
         window,
     },
     theme, widget,
 };
 
 use crate::{
-    backend::windows::{Window, Workspace},
+    backend::{
+        apps::{self, App},
+        search::{self, Help, Hit, Mode},
+        web::{self, Engine, Search},
+        windows::{Window, Workspace},
+    },
     switcher::{self, LABEL},
     ui::{self, TILE_RADIUS, palette, popup::Placed},
 };
@@ -79,6 +98,53 @@ const TITLE_PAD: f32 = 10.0;
 const RING: f32 = 3.0;
 /// A card's title bar is at least this wide, however small its window.
 const MIN_TITLE: f32 = 180.0;
+/// The search at the top.
+const SEARCH_WIDTH: f32 = 520.0;
+const SEARCH_HEIGHT: f32 = 46.0;
+/// The dock at the bottom: an app's cell and icon, the gap between cells,
+/// the running dot, the divider after the pinned apps, the padding; its
+/// height.
+const DOCK_CELL: f32 = 72.0;
+const DOCK_ICON: f32 = 52.0;
+const DOCK_GAP: f32 = 6.0;
+const DOT: f32 = 5.0;
+const DIVIDER: f32 = 1.0;
+const DOCK_PAD: f32 = 10.0;
+const DOCK_HEIGHT: f32 = DOCK_CELL + 2.0 * DOCK_PAD;
+/// Under the dock, to the screen's edge.
+const DOCK_BOTTOM: f32 = 12.0;
+/// A dock menu: its width, a row's height, its padding, a separator's
+/// room above and below, its gap above the dock; the dock's night, opaque.
+const MENU_WIDTH: f32 = 280.0;
+const MENU_ROW: f32 = 34.0;
+const MENU_PAD: f32 = 6.0;
+const MENU_SEP_PAD: f32 = 4.0;
+const MENU_GAP: f32 = 8.0;
+const MENU_BG: Color = palette::rgba(16, 21, 38, 0.98);
+/// A window's row's app icon, in its colours.
+const MENU_ICON: f32 = 18.0;
+/// The search's results: a tile's size and icon, the gap between, the
+/// panel's padding and its gap under the search, how many at most.
+const RESULT: f32 = 128.0;
+const RESULT_HEIGHT: f32 = 132.0;
+const RESULT_ICON: f32 = 72.0;
+const RESULT_GAP: f32 = 8.0;
+const RESULTS_PAD: f32 = 16.0;
+const RESULTS_GAP: f32 = 20.0;
+const MAX_RESULTS: usize = 24;
+/// At most this many apps a row in the panel.
+const APPS_COLUMNS: usize = 8;
+/// Results as rows: a row's height, its icon, the gap between, how many
+/// at most (each has its Ctrl+number), the panel's width in the overview.
+const ROW: f32 = 56.0;
+const ROW_ICON: f32 = 36.0;
+const ROW_GAP: f32 = 2.0;
+const ROWS: usize = 9;
+const ROWS_WIDTH: f32 = 680.0;
+/// The launcher's card: its width, its gap under the panel, its padding.
+const LAUNCHER_WIDTH: f32 = 760.0;
+const LAUNCHER_TOP: f32 = 16.0;
+const LAUNCHER_PAD: f32 = 14.0;
 /// A window's size before its first picture says otherwise.
 const UNKNOWN: Size = Size::new(1600.0, 1000.0);
 /// On top of their sizes, the windows used last are larger: each after the
@@ -101,10 +167,53 @@ pub enum Message {
     Space(Workspace),
     /// The pointer came onto (true) or left a card or a workspace.
     Hover(Target, bool),
-    /// A character typed: for the launcher.
+    /// The search's text, as edited in it.
+    Query(String),
+    /// Typed while the search didn't have the keys (a press elsewhere took
+    /// them): added, and the search takes them again.
     Typed(String),
-    /// The surface got (true) or lost the keyboard.
-    Focus(window::Id, bool),
+    /// The search takes the keys again.
+    FocusSearch,
+    /// The search's × pressed: cleared.
+    Clear,
+    /// Enter: the picked search result started.
+    Enter,
+    /// Ctrl and a digit: that result started (from 0).
+    Choose(usize),
+    /// Tab (back, true): a folder's pick completes the search; else the
+    /// pick moves on.
+    Tab(bool),
+    /// The query's finds that take a look (`search::lookup`): due for this
+    /// query, if it's still the one; found for it.
+    Lookup(String),
+    Hits(String, Vec<Hit>),
+    /// A sum's answer copied; a file opened; a command run (in a terminal).
+    Copy(String),
+    Open(PathBuf),
+    Run(String, bool),
+    /// The search's pick moved on (back, negative).
+    Pick(i32),
+    /// The search's pick moved a row up (negative) or down.
+    PickRow(i32),
+    /// An app pressed, in the dock or the search (its id, or a window's
+    /// app id when it has no entry): its last window raised, or started.
+    App(String),
+    /// A web search pressed (its URL): opened in the browser.
+    Web(String),
+    /// An engine picked: the search becomes its shortcut, ready for a query.
+    Shortcut(String),
+    /// The dock's grid pressed: every app shown, or the windows again.
+    ToggleApps,
+    /// An app's menu opened from the dock (its key), above its cell; from
+    /// the search or every app, at the pointer; closed.
+    DockMenu(String),
+    ResultMenu(String),
+    CloseMenu,
+    /// From an app's menu: one of its windows raised (by id); one of its
+    /// own actions (by place); all its windows closed.
+    RaiseWindow(String),
+    AppAction(String, usize),
+    Quit(String),
     /// The wheel: on through the workspaces.
     Scroll(ScrollDelta),
     /// A workspace's pin pressed.
@@ -119,6 +228,14 @@ pub enum Target {
     /// A workspace's pin: it lies over the workspace's corner, and counts
     /// as the workspace (its outline, a drop).
     Pin(Workspace),
+}
+
+/// An app's menu: whose (its key), and where the pointer was when it was
+/// asked for from the search or every app; from the dock, none: it sits
+/// above the app's cell.
+pub struct Menu {
+    pub key: String,
+    pub at: Option<Point>,
 }
 
 /// A card pressed, maybe being dragged.
@@ -141,8 +258,12 @@ pub struct Overview {
     pub drag: Option<Drag>,
     /// The compositor gave it the keyboard, and something was typed (for
     /// the launcher): losing the keyboard after both closes the overview.
-    pub focused: bool,
-    pub typed: bool,
+    /// What's typed, and which of the apps it finds is picked.
+    pub query: String,
+    pub picked: usize,
+    /// Every app shown (the dock's grid), and the app whose menu is open.
+    pub all_apps: bool,
+    pub menu: Option<Menu>,
     /// Scrolling not yet a step, and the workspace stepped to until the
     /// compositor says it's active.
     pub scrolled: f32,
@@ -154,19 +275,29 @@ pub struct Overview {
     pub speed: f32,
     pub lull: f32,
     pub pending: Option<usize>,
+    /// The launcher: the search alone, over the windows.
+    pub light: bool,
+    /// What looking the query up found (a sum's answer, files), for it or
+    /// one of its kind before it.
+    pub hits: Vec<Hit>,
 }
 
 impl Overview {
-    /// Open on the windows in `order` (their ids, the one used last first).
-    pub fn new(id: window::Id, order: Vec<String>) -> Self {
+    /// Open on the windows in `order` (their ids, the one used last first);
+    /// as the launcher if `light`.
+    pub fn new(id: window::Id, order: Vec<String>, light: bool) -> Self {
         Self {
             id,
             order,
+            light,
+            hits: Vec::new(),
             cursor: Point::ORIGIN,
             hover: None,
             drag: None,
-            focused: false,
-            typed: false,
+            query: String::new(),
+            picked: 0,
+            all_apps: false,
+            menu: None,
             scrolled: 0.0,
             scroll_at: None,
             stepped_at: None,
@@ -262,8 +393,135 @@ impl Overview {
         windows: &'a [Window],
         groups: &'a [Vec<Workspace>],
         pictures: &'a HashMap<String, SubsurfaceBuffer>,
+        apps: &'a [App],
+        favorites: &'a [String],
     ) -> Element<'a, Message> {
-        widget::responsive(move |size| self.laid_out(size, windows, groups, pictures)).into()
+        widget::responsive(move |size| {
+            if self.light {
+                self.launcher(size, windows, apps)
+            } else {
+                self.laid_out(size, windows, groups, pictures, apps, favorites)
+            }
+        })
+        .into()
+    }
+
+    /// The launcher: the search and what it lists in one card at the top
+    /// middle, over the windows; as the app library, as wide as a full row
+    /// of apps, their grid scrolling below the search. An app's menu by the
+    /// pointer. A press off it closes it.
+    fn launcher<'a>(
+        &'a self,
+        size: Size,
+        windows: &'a [Window],
+        apps: &'a [App],
+    ) -> Element<'a, Message> {
+        let listed = self.found(apps, windows);
+        let grid = APPS_COLUMNS as f32 * RESULT + (APPS_COLUMNS as f32 - 1.0) * RESULT_GAP;
+        let width = if self.all_apps {
+            grid + 2.0 * LAUNCHER_PAD
+        } else {
+            LAUNCHER_WIDTH
+        }
+        .min(size.width - 2.0 * MARGIN);
+        let mut parts = vec![self.search_bar(width - 2.0 * LAUNCHER_PAD)];
+        if !listed.is_empty() {
+            let picked = self.picked.min(listed.len() - 1);
+            parts.push(if self.rows(&listed) {
+                results_list(&listed, picked, apps)
+            } else {
+                let room = size.height - LAUNCHER_TOP - MARGIN - SEARCH_HEIGHT - 3.0 * LAUNCHER_PAD;
+                results_grid(&listed, picked, room, apps).0
+            });
+        }
+        let card = widget::container(widget::column::with_children(parts).spacing(LAUNCHER_PAD))
+            .padding(LAUNCHER_PAD)
+            .width(Length::Fixed(width))
+            .class(panel_style());
+        let at = Point::new(((size.width - width) / 2.0).round(), LAUNCHER_TOP);
+        let mut placed = Placed::new(size).occluding().push(card, at, width);
+        if let Some(asked) = &self.menu {
+            let ordered: Vec<&Window> = windows.iter().collect();
+            let item = entry(&asked.key, apps, &ordered);
+            placed = with_menu(
+                placed,
+                size,
+                &item,
+                asked.at,
+                size.width / 2.0,
+                size.height - MARGIN,
+            );
+        }
+        placed.on_press_outside(Message::Close).into()
+    }
+
+    /// What the search lists, in order: by the query's prefix (see
+    /// `search`); else the windows it names (in the launcher, every one
+    /// before anything's typed), a sum's answer, the web searches its
+    /// shortcut asks for or the engines it names, then the apps (those it
+    /// finds, or every one). As rows, no more than have a Ctrl+number.
+    pub fn found<'a>(&'a self, apps: &'a [App], windows: &'a [Window]) -> Vec<Found<'a>> {
+        let hits = |sums: bool| {
+            self.hits
+                .iter()
+                .filter(move |h| matches!(h, Hit::Calc(..)) == sums)
+                .cloned()
+                .map(Found::Hit)
+        };
+        let mut listed: Vec<Found<'a>> = match search::mode(&self.query) {
+            Mode::Plain => {
+                let word = self.query.trim().to_lowercase();
+                let windows = windows
+                    .iter()
+                    .filter(|w| {
+                        self.light
+                            && !self.all_apps
+                            && (w.title.to_lowercase().contains(&word)
+                                || owner(apps, &w.app_id)
+                                    .is_some_and(|a| a.name.to_lowercase().contains(&word)))
+                    })
+                    .map(Found::Window);
+                windows
+                    .chain(hits(true).filter(|_| search::sum_like(&self.query)))
+                    .chain(web::searches(&self.query).into_iter().map(Found::Web))
+                    .chain(web::engines(&self.query).into_iter().map(Found::Engine))
+                    .chain(
+                        shown_apps(apps, &self.query, self.all_apps)
+                            .into_iter()
+                            .map(Found::App),
+                    )
+                    .collect()
+            }
+            Mode::Calc(_) => hits(true).collect(),
+            Mode::Files(_) | Mode::Find(_) | Mode::Recent(_) => hits(false).collect(),
+            Mode::Run(command, terminal) => (!command.is_empty())
+                .then(|| Found::Run(command.to_owned(), terminal))
+                .into_iter()
+                .collect(),
+            Mode::Help(word) => search::help(word).map(Found::Help).collect(),
+        };
+        if self.rows(&listed) {
+            listed.truncate(ROWS);
+        }
+        listed
+    }
+
+    /// Whether the finds are listed as rows: always in the launcher (not
+    /// the app library); else once there's more than apps and web searches.
+    pub fn rows(&self, listed: &[Found]) -> bool {
+        (self.light && !self.all_apps)
+            || listed
+                .iter()
+                .any(|f| !matches!(f, Found::App(_) | Found::Web(_) | Found::Engine(_)))
+    }
+
+    /// How many finds a row of the list holds.
+    pub fn columns(&self, listed: &[Found]) -> usize {
+        if self.rows(listed) {
+            1
+        } else {
+            columns(listed.len())
+        }
     }
 
     fn laid_out<'a>(
@@ -272,6 +530,8 @@ impl Overview {
         windows: &'a [Window],
         groups: &'a [Vec<Workspace>],
         pictures: &'a HashMap<String, SubsurfaceBuffer>,
+        apps: &'a [App],
+        favorites: &'a [String],
     ) -> Element<'a, Message> {
         let spaces = group(groups, windows);
         let mut shown = shown(windows, spaces);
@@ -282,14 +542,43 @@ impl Overview {
                 .unwrap_or(usize::MAX)
         });
 
+        // Searching, or every app: the windows and workspaces step aside.
+        let listed = self.found(apps, windows);
+        let searching = self.all_apps || !self.query.trim().is_empty();
+
         // The workspaces down the left, straight on the desktop like the
-        // cards, each as large as the column allows.
+        // cards, each as large as the column allows; not while searching.
         let n = spaces.len().max(1) as f32;
         let tall = ((size.height - 2.0 * MARGIN - (n - 1.0) * SPACE_GAP) / n).min(SPACE_HEIGHT);
         let side = SPACE;
-        let mut placed = Placed::new(size);
+        // Nothing hovers through what lies over it (a menu over the cards).
+        let mut placed = Placed::new(size).occluding();
+        // The search and the dock first, always: a child's state goes by its
+        // place, and the search's (its text, its focus) must not move when
+        // the workspaces step aside for a search.
+        // The search, centred on the screen.
+        let search_at = Point::new(((size.width - SEARCH_WIDTH) / 2.0).round(), MARGIN);
+        placed = placed.push(self.search_bar(SEARCH_WIDTH), search_at, SEARCH_WIDTH);
+
+        // The dock, centred on the screen at the bottom; in the order the
+        // cards keep, so it doesn't shuffle either.
+        let mut ordered: Vec<&Window> = windows.iter().collect();
+        ordered.sort_by_key(|w| {
+            self.order
+                .iter()
+                .position(|id| *id == w.id)
+                .unwrap_or(usize::MAX)
+        });
+        let items = dock(apps, favorites, &ordered);
+        let (cells, dock_width) = dock_cells(&items);
+        let dock_at = Point::new(
+            ((size.width - dock_width) / 2.0).round(),
+            size.height - DOCK_BOTTOM - DOCK_HEIGHT,
+        );
+        placed = placed.push(dock_bar(&items, self.all_apps), dock_at, dock_width);
+
         let mut y = MARGIN;
-        for space in spaces {
+        for space in spaces.iter().filter(|_| !searching) {
             let ratio = pictures
                 .get(&space.key)
                 .map_or(1.6, |b| b.width() as f32 / b.height().max(1) as f32);
@@ -308,28 +597,57 @@ impl Overview {
         }
 
         // This workspace's windows, as large as they all fit right of the
-        // column, each row centred on the screen unless that would put it
-        // over the column.
+        // column and between the search and the dock, each row centred on
+        // the screen unless that would put it over the column.
         let left = MARGIN + side + GAP;
-        let room = Size::new(size.width - left - MARGIN, size.height - 2.0 * MARGIN);
+        let top = MARGIN + SEARCH_HEIGHT + GAP;
+        let room = Size::new(
+            size.width - left - MARGIN,
+            size.height - top - DOCK_BOTTOM - DOCK_HEIGHT - GAP,
+        );
         let centre = size.width / 2.0 - left;
-        // Each window's size, from its picture: the cards keep the windows'
-        // shapes, and their sizes against each other.
-        let sizes: Vec<Size> = shown
-            .iter()
-            .map(|w| {
-                pictures.get(&w.id).map_or(UNKNOWN, |b| {
-                    Size::new(b.width() as f32, b.height() as f32)
+
+        // Searching, as GNOME does: the windows and workspaces step aside,
+        // and the apps found sit in a row under the search.
+        if searching {
+            if !listed.is_empty() {
+                let picked = self.picked.min(listed.len() - 1);
+                let panel_top = MARGIN + SEARCH_HEIGHT + RESULTS_GAP;
+                let room = dock_at.y - GAP - panel_top;
+                let (panel, width) = if self.rows(&listed) {
+                    let list = widget::container(results_list(&listed, picked, apps))
+                        .padding(RESULTS_PAD / 2.0)
+                        .width(Length::Fixed(ROWS_WIDTH))
+                        .class(panel_style());
+                    (list.into(), ROWS_WIDTH)
+                } else {
+                    results_panel(&listed, picked, room, apps)
+                };
+                placed = placed.push(
+                    panel,
+                    Point::new(((size.width - width) / 2.0).round(), panel_top),
+                    width,
+                );
+            }
+        } else {
+            // Each window's size, from its picture: the cards keep the
+            // windows' shapes, and their sizes against each other.
+            let sizes: Vec<Size> = shown
+                .iter()
+                .map(|w| {
+                    pictures
+                        .get(&w.id)
+                        .map_or(UNKNOWN, |b| Size::new(b.width() as f32, b.height() as f32))
                 })
-            })
-            .collect();
-        for card in cards(&sizes, room, centre) {
-            let at = card.at + Vector::new(left, MARGIN);
-            placed = placed.push(
-                self.card(shown[card.index], pictures, card.width, card.picture),
-                at,
-                card.width,
-            );
+                .collect();
+            for card in cards(&sizes, room, centre) {
+                let at = card.at + Vector::new(left, top);
+                placed = placed.push(
+                    self.card(shown[card.index], pictures, card.width, card.picture),
+                    at,
+                    card.width,
+                );
+            }
         }
 
         // The window being dragged, under the pointer: its picture, above
@@ -345,17 +663,73 @@ impl Overview {
                 None => switcher::mark(&w.app_id, GHOST / 2.0),
             };
             let tall = GHOST * 0.625;
-            placed = placed.push(
-                widget::container(ghost).center_x(Length::Fixed(GHOST)).center_y(Length::Fixed(tall)),
+            // The pointer passes through it to the workspace it's over.
+            placed = placed.push_passive(
+                widget::container(ghost)
+                    .center_x(Length::Fixed(GHOST))
+                    .center_y(Length::Fixed(tall)),
                 self.cursor - Vector::new(GHOST / 2.0, tall / 2.0),
                 GHOST,
             );
+        }
+
+        // An app's menu over everything: above its dock cell, or by the
+        // pointer (below it, unless there's no room). A press anywhere else
+        // (on the see-through sheet under it) just closes it.
+        if let Some(asked) = &self.menu {
+            let item = entry(&asked.key, apps, &ordered);
+            let cell = items
+                .iter()
+                .position(|i| i.key == asked.key)
+                .map_or(size.width / 2.0, |i| dock_at.x + cells[i] + DOCK_CELL / 2.0);
+            placed = with_menu(placed, size, &item, asked.at, cell, dock_at.y);
         }
 
         // See-through: cosmic-comp draws no windows while it shows, so
         // what's behind is the desktop.
         widget::mouse_area(placed.on_press_outside(Message::Close))
             .on_scroll(Message::Scroll)
+            .into()
+    }
+
+    /// The search: a text input like any other (selecting, pasting,
+    /// Ctrl+Backspace), a × to clear it once something's in it.
+    fn search_bar<'a>(&self, width: f32) -> Element<'a, Message> {
+        let icon = widget::container(ui::icon("search", 18))
+            .padding([0, 4, 0, 14])
+            .class(theme::Container::custom(|_| widget::container::Style {
+                icon_color: Some(palette::MUTED),
+                ..Default::default()
+            }));
+        let input = widget::text_input("Type to search, or ? for more", self.query.clone())
+            .id(SEARCH.clone())
+            .on_input(Message::Query)
+            .on_submit(|_| Message::Enter)
+            .leading_icon(icon.into())
+            .size(15)
+            .padding([13, 14])
+            .width(Length::Fixed(width))
+            .style(search_style());
+        // Always there, so the input's insides keep their shape (libcosmic's
+        // input panicked when its trailing icon went): unseen and inert
+        // while there's nothing to clear.
+        // Drawn, not an icon: inside the input an icon's colour came out
+        // near black, and it showed with nothing to clear.
+        let empty = self.query.is_empty();
+        let x = widget::canvas(Cross {
+            color: (!empty).then_some(palette::MUTED),
+        })
+        .width(Length::Fixed(24.0))
+        .height(Length::Fixed(24.0));
+        let clear = widget::button::custom(x)
+            .width(Length::Fixed(24.0))
+            .height(Length::Fixed(24.0))
+            .padding(0)
+            .class(hover_tile(false))
+            .on_press_maybe((!empty).then_some(Message::Clear));
+        let input = input.trailing_icon(widget::container(clear).padding([0, 12, 0, 0]).into());
+        widget::container(input)
+            .center_y(Length::Fixed(SEARCH_HEIGHT))
             .into()
     }
 
@@ -440,12 +814,7 @@ impl Overview {
         } else {
             w.title.clone()
         };
-        let label = switcher::label(
-            w,
-            &title,
-            width - 2.0 * TITLE_PAD,
-            Some(close_button(&w.id)),
-        );
+        let label = switcher::label(w, &title, Some(close_button(&w.id)));
         let bar = widget::container(label)
             .padding([0.0, TITLE_PAD])
             .width(Length::Fixed(width))
@@ -454,10 +823,13 @@ impl Overview {
         let size = picture;
         let picture: Element<'a, Message> = match pictures.get(&w.id) {
             // Filling a box of its own shape: nothing round it.
+            // Below this surface, as the workspaces' are: a dock menu can lie
+            // over it.
             Some(buffer) => Subsurface::new(buffer.clone())
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .alpha(if dragged { 0.4 } else { 1.0 })
+                .z(-1)
                 .into(),
             None => switcher::mark(&w.app_id, size.height.min(size.width) * 0.6),
         };
@@ -504,7 +876,6 @@ fn shown<'a>(windows: &'a [Window], spaces: &[Workspace]) -> Vec<&'a Window> {
         })
         .collect()
 }
-
 
 /// A card laid out: which window, its top left corner and width, and its
 /// picture's size.
@@ -641,9 +1012,11 @@ fn pin_button<'a>(space: &Workspace) -> Element<'a, Message> {
     // Tilted while loose, upright once pinned.
     let icon = widget::container(ui::icon(if pinned { "pinned" } else { "pin" }, 13))
         .center(Length::Fixed(PIN))
-        .class(theme::Container::custom(move |_| widget::container::Style {
-            icon_color: Some(color),
-            ..Default::default()
+        .class(theme::Container::custom(move |_| {
+            widget::container::Style {
+                icon_color: Some(color),
+                ..Default::default()
+            }
         }));
     let button = widget::button::custom(icon)
         .width(Length::Fixed(PIN))
@@ -685,6 +1058,45 @@ fn close_button<'a>(id: &str) -> Element<'a, Message> {
     })
     .on_press(Message::CloseWindow(id.to_owned()))
     .into()
+}
+
+/// The search's ×, in `color`; nothing without one.
+struct Cross {
+    color: Option<Color>,
+}
+
+impl<M> widget::canvas::Program<M, cosmic::Theme, cosmic::Renderer> for Cross {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &(),
+        renderer: &cosmic::Renderer,
+        _theme: &cosmic::Theme,
+        bounds: Rectangle,
+        _cursor: iced::mouse::Cursor,
+    ) -> Vec<widget::canvas::Geometry<cosmic::Renderer>> {
+        use widget::canvas::{Frame, LineCap, Path, Stroke};
+        let Some(color) = self.color else {
+            return Vec::new();
+        };
+        let mut frame = Frame::new(renderer, bounds.size());
+        let (centre, arm) = (frame.center(), 4.5);
+        let cross = Path::new(|path| {
+            path.move_to(centre + Vector::new(-arm, -arm));
+            path.line_to(centre + Vector::new(arm, arm));
+            path.move_to(centre + Vector::new(arm, -arm));
+            path.line_to(centre + Vector::new(-arm, arm));
+        });
+        frame.stroke(
+            &cross,
+            Stroke::default()
+                .with_color(color)
+                .with_width(1.6)
+                .with_line_cap(LineCap::Round),
+        );
+        vec![frame.into_geometry()]
+    }
 }
 
 /// The close button's circle and ×, drawn as one shape: on the same grid,
@@ -762,14 +1174,786 @@ fn fill(background: Color, edge: Option<Color>) -> theme::Container<'static> {
     })
 }
 
-/// A character typed with no shortcut modifier, for the launcher.
-pub fn typed(key: &Key, modifiers: Modifiers) -> Option<Message> {
+/// The search's text input, to focus it. Unique, not named: libcosmic's
+/// iced lifts a named widget's state out on every rebuild and hands it back
+/// only where it finds the same name, so when the overview changed shape
+/// round the search (the workspaces coming back on Backspace) the input
+/// was laid out with no state and the daemon panicked.
+pub static SEARCH: std::sync::LazyLock<widget::Id> = std::sync::LazyLock::new(widget::Id::unique);
+
+/// The keys the search didn't take, as the overview's messages: Up and
+/// Down move the pick a row, Tab one (and Left and Right when the search
+/// isn't focused); Enter starts it; typing while the search isn't focused
+/// goes to it.
+pub fn key(key: &Key, modifiers: Modifiers) -> Option<Message> {
+    use iced::keyboard::key::Named;
+    if modifiers.control() && !modifiers.alt() && !modifiers.logo() {
+        return chosen(key).map(Message::Choose);
+    }
+    if modifiers.control() || modifiers.alt() || modifiers.logo() {
+        return None;
+    }
     match key {
-        Key::Character(c) if !modifiers.control() && !modifiers.alt() && !modifiers.logo() => {
-            Some(Message::Typed(c.to_string()))
-        }
+        Key::Character(c) => Some(Message::Typed(c.to_string())),
+        Key::Named(Named::Backspace | Named::Delete) => Some(Message::FocusSearch),
+        Key::Named(Named::Enter) => Some(Message::Enter),
+        Key::Named(Named::ArrowRight) => Some(Message::Pick(1)),
+        Key::Named(Named::ArrowLeft) => Some(Message::Pick(-1)),
+        Key::Named(Named::ArrowDown) => Some(Message::PickRow(1)),
+        Key::Named(Named::ArrowUp) => Some(Message::PickRow(-1)),
+        Key::Named(Named::Tab) => Some(Message::Tab(modifiers.shift())),
         _ => None,
     }
+}
+
+/// The result a digit picks with Ctrl (1 the first), if it's 1 to 9.
+pub fn chosen(key: &Key) -> Option<usize> {
+    match key {
+        Key::Character(c) => c
+            .parse::<usize>()
+            .ok()
+            .filter(|n| (1..=ROWS).contains(n))
+            .map(|n| n - 1),
+        _ => None,
+    }
+}
+
+/// The search's look: the title bars' night glass as a pill, the accent for
+/// what's selected.
+fn search_style() -> theme::TextInput {
+    let appearance = |edge: f32| widget::text_input::Appearance {
+        background: Background::Color(TITLE_BG),
+        border_radius: (SEARCH_HEIGHT / 2.0).into(),
+        border_offset: None,
+        border_width: 1.0,
+        border_color: palette::alpha(palette::TEXT, edge),
+        label_color: palette::TEXT,
+        placeholder_color: palette::FAINT,
+        selected_text_color: palette::TEXT,
+        icon_color: Some(palette::MUTED),
+        text_color: Some(palette::TEXT),
+        selected_fill: palette::alpha(palette::ACCENT, 0.35),
+    };
+    theme::TextInput::Custom {
+        active: Box::new(move |_| appearance(0.12)),
+        error: Box::new(move |_| appearance(0.12)),
+        hovered: Box::new(move |_| appearance(0.2)),
+        focused: Box::new(move |_| appearance(0.28)),
+        disabled: Box::new(move |_| appearance(0.12)),
+    }
+}
+
+/// The apps the search shows for `query`, best first, as many as fit.
+pub fn search_results<'a>(apps: &'a [App], query: &str) -> Vec<&'a App> {
+    let mut found = apps::search(apps, query);
+    found.truncate(MAX_RESULTS);
+    found
+}
+
+/// The apps the panel shows: those the search finds, else every app (by
+/// name) when asked for, else none.
+pub fn shown_apps<'a>(apps: &'a [App], query: &str, all: bool) -> Vec<&'a App> {
+    if !query.trim().is_empty() {
+        search_results(apps, query)
+    } else if all {
+        let mut every: Vec<&App> = apps.iter().collect();
+        every.sort_by_key(|a| a.name.to_lowercase());
+        every
+    } else {
+        Vec::new()
+    }
+}
+
+/// Something the search lists: a window (in the launcher), an app, a web
+/// search a shortcut asks for or an engine a word names, a sum's answer or
+/// a file, a command, or what a prefix does.
+pub enum Found<'a> {
+    Window(&'a Window),
+    App(&'a App),
+    Web(Search),
+    Engine(Engine),
+    Hit(Hit),
+    Run(String, bool),
+    Help(&'static Help),
+}
+
+impl<'a> Found<'a> {
+    /// What a press, or Enter on it, does.
+    pub fn press(&self) -> Message {
+        match self {
+            Found::Window(w) => Message::RaiseWindow(w.id.clone()),
+            Found::App(app) => Message::App(app.id.clone()),
+            Found::Web(search) => Message::Web(search.url.clone()),
+            Found::Engine(engine) => Message::Shortcut(engine.shortcut.clone()),
+            Found::Hit(Hit::Calc(_, answer)) => Message::Copy(answer.clone()),
+            Found::Hit(Hit::File(path, _)) => Message::Open(path.clone()),
+            Found::Run(command, terminal) => Message::Run(command.clone(), *terminal),
+            Found::Help(help) => Message::Shortcut(help.prefix.to_owned()),
+        }
+    }
+
+    /// Its icon at `size`, its name, and what it is.
+    fn shown(&self, apps: &'a [App], size: f32) -> (Element<'a, Message>, String, String) {
+        match self {
+            Found::Window(w) => {
+                let app = owner(apps, &w.app_id);
+                let name = app.map_or_else(|| switcher::name(&w.app_id), |a| a.name.clone());
+                let title = if w.title.is_empty() {
+                    name.clone()
+                } else {
+                    w.title.clone()
+                };
+                (
+                    app_icon(app, Some(&w.app_id), size),
+                    title,
+                    format!("{name} window"),
+                )
+            }
+            Found::App(app) => {
+                let about = if app.about.is_empty() {
+                    "App".into()
+                } else {
+                    app.about.clone()
+                };
+                (app_icon(Some(app), None, size), app.name.clone(), about)
+            }
+            Found::Web(search) => (
+                web_icon(search.icon.as_deref(), size),
+                search.label.clone(),
+                search.url.trim_start_matches("https://").to_owned(),
+            ),
+            Found::Engine(engine) => (
+                web_icon(engine.icon.as_deref(), size),
+                engine.name.clone(),
+                format!("{}<keywords>", engine.shortcut),
+            ),
+            Found::Hit(Hit::Calc(sum, answer)) => (
+                named_icon("accessories-calculator", size),
+                answer.clone(),
+                format!("{sum}   ·   Enter copies it"),
+            ),
+            Found::Hit(Hit::File(path, dir)) => (
+                named_icon(if *dir { "folder" } else { "text-x-generic" }, size),
+                path.file_name()
+                    .map_or_else(|| search::tilde(path), |n| n.to_string_lossy().into_owned()),
+                path.parent().map(search::tilde).unwrap_or_default(),
+            ),
+            Found::Run(command, terminal) => (
+                named_icon(
+                    if *terminal {
+                        "utilities-terminal"
+                    } else {
+                        "system-run"
+                    },
+                    size,
+                ),
+                command.clone(),
+                if *terminal {
+                    "Run in a terminal"
+                } else {
+                    "Run in the background"
+                }
+                .into(),
+            ),
+            Found::Help(help) => (
+                named_icon(help.icon, size),
+                help.name.into(),
+                format!("{}   ·   {}", help.syntax, help.example),
+            ),
+        }
+    }
+}
+
+/// The app a window with this app id is, if it has an entry.
+fn owner<'a>(apps: &'a [App], app_id: &str) -> Option<&'a App> {
+    apps.iter().find(|a| a.owns(app_id))
+}
+
+/// How many apps a row of the panel holds, for `n` of them.
+pub fn columns(n: usize) -> usize {
+    APPS_COLUMNS.min(n).max(1)
+}
+
+/// A dock entry: an app pinned or running, with its windows.
+pub struct DockItem<'a> {
+    /// What a press sends: the app's id, or a window's app id if no desktop
+    /// entry is known for it.
+    pub key: String,
+    pub app: Option<&'a App>,
+    pub windows: Vec<&'a Window>,
+    pub pinned: bool,
+}
+
+/// The dock's apps: the pinned ones in their order, then the others with
+/// windows, in the order their windows come in `windows`.
+pub fn dock<'a>(
+    apps: &'a [App],
+    favorites: &[String],
+    windows: &[&'a Window],
+) -> Vec<DockItem<'a>> {
+    let mut items: Vec<DockItem<'a>> = favorites
+        .iter()
+        .map(|id| {
+            let app = apps.iter().find(|a| &a.id == id);
+            let windows = windows
+                .iter()
+                .copied()
+                .filter(|w| app.map_or(w.app_id.eq_ignore_ascii_case(id), |a| a.owns(&w.app_id)))
+                .collect();
+            DockItem {
+                key: id.clone(),
+                app,
+                windows,
+                pinned: true,
+            }
+        })
+        .collect();
+    for &w in windows {
+        if items.iter().any(|i| i.windows.iter().any(|x| x.id == w.id)) {
+            continue;
+        }
+        let app = apps.iter().find(|a| a.owns(&w.app_id));
+        let key = app.map_or_else(|| w.app_id.to_lowercase(), |a| a.id.clone());
+        match items.iter_mut().find(|i| i.key == key) {
+            Some(item) => item.windows.push(w),
+            None => items.push(DockItem {
+                key,
+                app,
+                windows: vec![w],
+                pinned: false,
+            }),
+        }
+    }
+    items
+}
+
+/// An app (by key) with its windows, as a menu needs it, wherever it was
+/// asked for.
+fn entry<'a>(key: &str, apps: &'a [App], windows: &[&'a Window]) -> DockItem<'a> {
+    let app = apps.iter().find(|a| a.id == key);
+    DockItem {
+        key: key.to_owned(),
+        app,
+        windows: windows
+            .iter()
+            .copied()
+            .filter(|w| app.map_or(w.app_id.eq_ignore_ascii_case(key), |a| a.owns(&w.app_id)))
+            .collect(),
+        pinned: false,
+    }
+}
+
+/// The dock's cells: each app's left edge from the dock's, and the dock's
+/// width with the grid at its end. Dividers come after the pinned apps when
+/// others run, and before the grid.
+fn dock_cells(items: &[DockItem]) -> (Vec<f32>, f32) {
+    let mut x = DOCK_PAD;
+    let mut cells = Vec::with_capacity(items.len());
+    for (i, item) in items.iter().enumerate() {
+        if i > 0 && !item.pinned && items[i - 1].pinned {
+            x += DIVIDER + DOCK_GAP;
+        }
+        cells.push(x);
+        x += DOCK_CELL + DOCK_GAP;
+    }
+    if !items.is_empty() {
+        x += DIVIDER + DOCK_GAP;
+    }
+    (cells, x + DOCK_CELL + DOCK_PAD)
+}
+
+/// The dock: each app's icon, a dot under it while it has windows, a menu
+/// on a right press; the grid of every app at the end, lit while it shows.
+fn dock_bar<'a>(items: &[DockItem<'a>], all_apps: bool) -> Element<'a, Message> {
+    let divider = || -> Element<'a, Message> {
+        widget::container(widget::space::horizontal())
+            .width(Length::Fixed(DIVIDER))
+            .height(Length::Fixed(DOCK_CELL * 0.6))
+            .class(fill_round(palette::SEP, 0.0))
+            .into()
+    };
+    let mut cells: Vec<Element<'a, Message>> = Vec::new();
+    for (i, item) in items.iter().enumerate() {
+        if i > 0 && !item.pinned && items[i - 1].pinned {
+            cells.push(divider());
+        }
+        let running = if item.windows.is_empty() {
+            Color::TRANSPARENT
+        } else {
+            palette::TEXT
+        };
+        let dot = widget::container(widget::space::horizontal())
+            .width(Length::Fixed(DOT))
+            .height(Length::Fixed(DOT))
+            .class(fill_round(running, DOT / 2.0));
+        let icon = app_icon(
+            item.app,
+            item.windows.first().map(|w| w.app_id.as_str()),
+            DOCK_ICON,
+        );
+        let inside = widget::column::with_children(vec![
+            widget::container(icon)
+                .center_x(Length::Fill)
+                .center_y(Length::Fixed(DOCK_CELL - DOT - 8.0))
+                .into(),
+            dot.into(),
+        ])
+        .spacing(2)
+        .align_x(iced::Alignment::Center);
+        let button = widget::button::custom(inside)
+            .width(Length::Fixed(DOCK_CELL))
+            .height(Length::Fixed(DOCK_CELL))
+            .padding(0)
+            .class(hover_tile(false))
+            .on_press(Message::App(item.key.clone()));
+        cells.push(
+            widget::mouse_area(button)
+                .on_right_press(Message::DockMenu(item.key.clone()))
+                .into(),
+        );
+    }
+    if !items.is_empty() {
+        cells.push(divider());
+    }
+    cells.push(
+        widget::button::custom(widget::container(ui::icon("grid-dots", 30)).center(Length::Fill))
+            .width(Length::Fixed(DOCK_CELL))
+            .height(Length::Fixed(DOCK_CELL))
+            .padding(0)
+            .class(hover_tile(all_apps))
+            .on_press(Message::ToggleApps)
+            .into(),
+    );
+    let row = widget::row::with_children(cells)
+        .spacing(DOCK_GAP)
+        .align_y(iced::Alignment::Center);
+    widget::container(row)
+        .padding(DOCK_PAD)
+        .center_y(Length::Fixed(DOCK_HEIGHT))
+        .class(theme::Container::custom(|_| widget::container::Style {
+            background: Some(Background::Color(TITLE_BG)),
+            border: iced::Border {
+                radius: 22.0.into(),
+                width: 1.0,
+                color: palette::alpha(palette::TEXT, 0.12),
+            },
+            ..Default::default()
+        }))
+        .into()
+}
+
+/// An app's menu laid over everything: by the pointer (`at`: below it,
+/// unless there's no room) or, from the dock, centred on `middle` just
+/// above `above`. A press anywhere else (on the see-through sheet under
+/// it) just closes it.
+fn with_menu<'a>(
+    placed: Placed<'a, Message>,
+    size: Size,
+    item: &DockItem<'a>,
+    at: Option<Point>,
+    middle: f32,
+    above: f32,
+) -> Placed<'a, Message> {
+    let (menu, height) = dock_menu(item);
+    let (middle, y) = match at {
+        Some(at) if at.y + MENU_GAP + height > size.height - MARGIN => {
+            (at.x, at.y - MENU_GAP - height)
+        }
+        Some(at) => (at.x, at.y + MENU_GAP),
+        None => (middle, above - MENU_GAP - height),
+    };
+    let x = (middle - MENU_WIDTH / 2.0).clamp(MARGIN, size.width - MARGIN - MENU_WIDTH);
+    let sheet = widget::mouse_area(
+        widget::container(widget::space::horizontal())
+            .width(Length::Fill)
+            .height(Length::Fill),
+    )
+    .on_press(Message::CloseMenu)
+    .on_right_press(Message::CloseMenu);
+    placed.push(sheet, Point::ORIGIN, size.width).push(
+        menu,
+        Point::new(x.round(), y.max(MARGIN).round()),
+        MENU_WIDTH,
+    )
+}
+
+/// An app's menu, and its height: its windows (to go to one); its own
+/// actions from its desktop entry; quitting while it runs. Thin lines
+/// between those.
+fn dock_menu<'a>(item: &DockItem<'a>) -> (Element<'a, Message>, f32) {
+    let name = item
+        .app
+        .map(|a| a.name.clone())
+        .unwrap_or_else(|| switcher::name(&item.key));
+    let windows: Vec<Element<'a, Message>> = item
+        .windows
+        .iter()
+        .map(|w| {
+            let title = if w.title.is_empty() {
+                name.clone()
+            } else {
+                w.title.clone()
+            };
+            let icon = app_icon(item.app, Some(w.app_id.as_str()), MENU_ICON);
+            menu_item(Some(icon), title, Message::RaiseWindow(w.id.clone()))
+        })
+        .collect();
+    let launch: Vec<Element<'a, Message>> = item
+        .app
+        .into_iter()
+        .flat_map(|app| app.actions.iter().enumerate())
+        .map(|(i, (action, _))| {
+            menu_item(
+                None,
+                action.clone(),
+                Message::AppAction(item.key.clone(), i),
+            )
+        })
+        .collect();
+    let quit: Vec<Element<'a, Message>> = if item.windows.is_empty() {
+        Vec::new()
+    } else {
+        vec![menu_item(
+            None,
+            "Quit".into(),
+            Message::Quit(item.key.clone()),
+        )]
+    };
+    let mut rows: Vec<Element<'a, Message>> = Vec::new();
+    let mut height = 2.0 * MENU_PAD;
+    for group in [windows, launch, quit]
+        .into_iter()
+        .filter(|g| !g.is_empty())
+    {
+        if !rows.is_empty() {
+            rows.push(
+                widget::container(
+                    widget::container(widget::space::horizontal())
+                        .width(Length::Fill)
+                        .height(Length::Fixed(1.0))
+                        .class(fill_round(palette::alpha(palette::TEXT, 0.1), 0.0)),
+                )
+                .padding([MENU_SEP_PAD, 8.0])
+                .into(),
+            );
+            height += 1.0 + 2.0 * MENU_SEP_PAD;
+        }
+        height += group.len() as f32 * MENU_ROW;
+        rows.extend(group);
+    }
+    let card = widget::container(widget::column::with_children(rows))
+        .padding(MENU_PAD)
+        .width(Length::Fixed(MENU_WIDTH))
+        .class(theme::Container::custom(|_| widget::container::Style {
+            background: Some(Background::Color(MENU_BG)),
+            text_color: Some(palette::TEXT),
+            icon_color: Some(palette::MUTED),
+            border: iced::Border {
+                radius: 14.0.into(),
+                width: 1.0,
+                color: palette::alpha(palette::TEXT, 0.12),
+            },
+            shadow: iced::Shadow {
+                color: palette::alpha(Color::BLACK, 0.35),
+                offset: Vector::new(0.0, 6.0),
+                blur_radius: 18.0,
+            },
+            ..Default::default()
+        }));
+    (card.into(), height)
+}
+
+/// A menu's row: the app's icon on a window's row (else its room, so the
+/// labels line up), the label cut to fit, a soft shade under the pointer.
+fn menu_item<'a>(
+    icon: Option<Element<'a, Message>>,
+    label: String,
+    on_press: Message,
+) -> Element<'a, Message> {
+    let icon: Element<'a, Message> = widget::container(icon.unwrap_or_else(|| {
+        widget::space::horizontal()
+            .width(Length::Fixed(MENU_ICON))
+            .into()
+    }))
+    .center_x(Length::Fixed(MENU_ICON))
+    .into();
+    // Filling the row's height, so the label and icon sit in its middle
+    // (a shrunk row sat at the top of the button).
+    let row = widget::row::with_children(vec![
+        icon,
+        ui::marquee::ticker(label, ui::text::body, false),
+    ])
+    .spacing(10)
+    .height(Length::Fill)
+    .align_y(iced::Alignment::Center);
+    let style = |hovered: bool| widget::button::Style {
+        background: Some(Background::Color(if hovered {
+            palette::alpha(palette::TEXT, 0.08)
+        } else {
+            Color::TRANSPARENT
+        })),
+        border_radius: 8.0.into(),
+        icon_color: Some(palette::MUTED),
+        text_color: Some(palette::TEXT),
+        ..widget::button::Style::new()
+    };
+    widget::button::custom(row)
+        .width(Length::Fill)
+        .height(Length::Fixed(MENU_ROW))
+        .padding([0, 10])
+        .class(theme::Button::Custom {
+            active: Box::new(move |_, _| style(false)),
+            disabled: Box::new(move |_| style(false)),
+            hovered: Box::new(move |_, _| style(true)),
+            pressed: Box::new(move |_, _| style(true)),
+        })
+        .on_press(on_press)
+        .into()
+}
+
+/// The apps listed, as GNOME shows them: large icons with their names in
+/// rows on a dark rounded panel, the pick on a lighter tile, scrolling when
+/// they don't fit `room`'s height. With the panel's width.
+fn results_panel<'a>(
+    listed: &[Found<'a>],
+    picked: usize,
+    room: f32,
+    apps: &'a [App],
+) -> (Element<'a, Message>, f32) {
+    let (grid, width) = results_grid(listed, picked, room - 2.0 * RESULTS_PAD, apps);
+    let panel = widget::container(grid)
+        .padding(RESULTS_PAD)
+        .class(panel_style())
+        .into();
+    (panel, width + 2.0 * RESULTS_PAD)
+}
+
+/// The finds' tiles in rows, scrolling when they're taller than `room`;
+/// with their width.
+fn results_grid<'a>(
+    listed: &[Found<'a>],
+    picked: usize,
+    room: f32,
+    apps: &'a [App],
+) -> (Element<'a, Message>, f32) {
+    let cols = columns(listed.len());
+    let rows: Vec<Element<'a, Message>> = listed
+        .chunks(cols)
+        .enumerate()
+        .map(|(r, chunk)| {
+            let tiles: Vec<Element<'a, Message>> = chunk
+                .iter()
+                .enumerate()
+                .map(|(c, item)| {
+                    let (icon, label, _) = item.shown(apps, RESULT_ICON);
+                    let menu = match item {
+                        Found::App(app) => Some(Message::ResultMenu(app.id.clone())),
+                        _ => None,
+                    };
+                    let inside = widget::column::with_children(vec![
+                        icon,
+                        ui::marquee::ticker(label, ui::text::body, true),
+                    ])
+                    .spacing(10)
+                    .align_x(iced::Alignment::Center);
+                    let tile =
+                        widget::button::custom(widget::container(inside).center(Length::Fill))
+                            .width(Length::Fixed(RESULT))
+                            .height(Length::Fixed(RESULT_HEIGHT))
+                            .padding(8)
+                            .class(result_style(r * cols + c == picked))
+                            .on_press(item.press());
+                    let mut area = widget::mouse_area(tile);
+                    if let Some(menu) = menu {
+                        area = area.on_right_press(menu);
+                    }
+                    area.into()
+                })
+                .collect();
+            widget::row::with_children(tiles).spacing(RESULT_GAP).into()
+        })
+        .collect();
+    let n_rows = rows.len() as f32;
+    let tall = n_rows * RESULT_HEIGHT + (n_rows - 1.0).max(0.0) * RESULT_GAP;
+    let grid = widget::column::with_children(rows).spacing(RESULT_GAP);
+    let width = cols as f32 * RESULT + (cols as f32 - 1.0) * RESULT_GAP;
+    let inner: Element<'a, Message> = if tall > room {
+        widget::scrollable(grid)
+            .height(Length::Fixed(room.max(RESULT_HEIGHT)))
+            .into()
+    } else {
+        grid.into()
+    };
+    (inner, width)
+}
+
+/// The results' panel, and the launcher's card: night glass, rounded.
+fn panel_style() -> theme::Container<'static> {
+    theme::Container::custom(|_| widget::container::Style {
+        background: Some(Background::Color(TITLE_BG)),
+        text_color: Some(palette::TEXT),
+        border: iced::Border {
+            radius: 24.0.into(),
+            width: 1.0,
+            color: palette::alpha(palette::TEXT, 0.12),
+        },
+        ..Default::default()
+    })
+}
+
+/// The results as rows, the way COSMIC's launcher listed them: each an
+/// icon, a name over what it is, and its Ctrl+number; the pick lighter.
+fn results_list<'a>(listed: &[Found<'a>], picked: usize, apps: &'a [App]) -> Element<'a, Message> {
+    let rows: Vec<Element<'a, Message>> = listed
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            let (icon, name, about) = item.shown(apps, ROW_ICON);
+            let words = widget::column::with_children(vec![
+                ui::marquee::ticker(name, ui::text::row, false),
+                ui::text::row_sub(about)
+                    .class(theme::Text::Custom(ui::dimmed))
+                    .into(),
+            ])
+            .spacing(3)
+            .width(Length::Fill);
+            let row = widget::row::with_children(vec![
+                widget::container(icon)
+                    .center_x(Length::Fixed(ROW_ICON))
+                    .into(),
+                words.into(),
+                ui::text::small(format!("Ctrl + {}", i + 1))
+                    .class(theme::Text::Custom(ui::dimmed))
+                    .into(),
+            ])
+            .spacing(14)
+            .height(Length::Fill)
+            .align_y(iced::Alignment::Center);
+            widget::button::custom(row)
+                .width(Length::Fill)
+                .height(Length::Fixed(ROW))
+                .padding([0, 14])
+                .class(result_style(i == picked))
+                .on_press(item.press())
+                .into()
+        })
+        .collect();
+    widget::column::with_children(rows).spacing(ROW_GAP).into()
+}
+
+/// An icon from the theme by name, looked up at twice the size (see
+/// `app_icon`).
+fn named_icon<'a>(name: &str, size: f32) -> Element<'a, Message> {
+    let px = size as u16;
+    widget::icon(
+        widget::icon::from_name(name)
+            .size(px.saturating_mul(2))
+            .handle(),
+    )
+    .size(px)
+    .into()
+}
+
+/// A search result's tile: lighter when picked, faint under the pointer.
+fn result_style(picked: bool) -> theme::Button {
+    let style = move |hovered: bool| widget::button::Style {
+        background: Some(Background::Color(if picked {
+            palette::alpha(palette::TEXT, 0.16)
+        } else if hovered {
+            palette::alpha(palette::TEXT, 0.08)
+        } else {
+            Color::TRANSPARENT
+        })),
+        border_radius: 16.0.into(),
+        icon_color: Some(palette::TEXT),
+        text_color: Some(palette::TEXT),
+        ..widget::button::Style::new()
+    };
+    theme::Button::Custom {
+        active: Box::new(move |_, _| style(false)),
+        disabled: Box::new(move |_| style(false)),
+        hovered: Box::new(move |_, _| style(true)),
+        pressed: Box::new(move |_, _| style(true)),
+    }
+}
+
+/// A web search's icon: its engine's from Papirus (`CABIN_WEB_ICONS`, set
+/// by the package's wrapper), else a globe.
+fn web_icon<'a>(name: Option<&str>, size: f32) -> Element<'a, Message> {
+    let path = name
+        .zip(std::env::var_os("CABIN_WEB_ICONS"))
+        .map(|(name, dir)| std::path::Path::new(&dir).join(format!("{name}.svg")));
+    match path.filter(|p| p.exists()) {
+        Some(path) => widget::icon(widget::icon::from_path(path))
+            .size(size as u16)
+            .into(),
+        None => widget::container(ui::icon("world", (size * 0.8) as u16))
+            .center_x(Length::Fixed(size))
+            .center_y(Length::Fixed(size))
+            .into(),
+    }
+}
+
+/// An app's icon: its entry's (a name in the icon theme, or a file), else
+/// the mark its window's app id gets.
+fn app_icon<'a>(app: Option<&App>, app_id: Option<&str>, size: f32) -> Element<'a, Message> {
+    let px = size as u16;
+    match app {
+        Some(app) if app.icon.starts_with('/') => {
+            widget::icon(widget::icon::from_path(app.icon.clone().into()))
+                .size(px)
+                .into()
+        }
+        // Looked up at twice the size: the screen is scaled, and a raster
+        // found at the size it's drawn at comes out blurred.
+        Some(app) => widget::icon(
+            widget::icon::from_name(app.icon.clone())
+                .size(px.saturating_mul(2))
+                .handle(),
+        )
+        .size(px)
+        .into(),
+        // The mark is drawn at 0.6 of what it's given.
+        None => switcher::mark(app_id.unwrap_or_default(), size / 0.6),
+    }
+}
+
+/// A dock cell or search result: faint under the pointer, lit and edged
+/// in the accent when picked.
+fn hover_tile(picked: bool) -> theme::Button {
+    let style = move |hovered: bool| widget::button::Style {
+        background: Some(Background::Color(if picked {
+            palette::ROW_SELECTED
+        } else if hovered {
+            palette::ROW_HOVER
+        } else {
+            Color::TRANSPARENT
+        })),
+        border_radius: 14.0.into(),
+        border_width: if picked { 2.0 } else { 0.0 },
+        border_color: palette::ACCENT,
+        icon_color: Some(palette::TEXT),
+        text_color: Some(palette::TEXT),
+        ..widget::button::Style::new()
+    };
+    theme::Button::Custom {
+        active: Box::new(move |_, _| style(false)),
+        disabled: Box::new(move |_| style(false)),
+        hovered: Box::new(move |_, _| style(true)),
+        pressed: Box::new(move |_, _| style(true)),
+    }
+}
+
+/// A plain fill with rounded corners: the dock's running dot, its divider.
+fn fill_round(color: Color, radius: f32) -> theme::Container<'static> {
+    theme::Container::custom(move |_| widget::container::Style {
+        background: Some(Background::Color(color)),
+        border: iced::Border {
+            radius: radius.into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    })
 }
 
 #[cfg(test)]
@@ -780,6 +1964,94 @@ mod tests {
 
     const SCREEN: Size = Size::new(2048.0, 1247.0);
     const MIDDLE: f32 = ROOM.width / 2.0;
+
+    fn item(key: &str, pinned: bool) -> DockItem<'static> {
+        DockItem {
+            key: key.into(),
+            app: None,
+            windows: Vec::new(),
+            pinned,
+        }
+    }
+
+    #[test]
+    fn dock_cells_leave_room_for_the_dividers() {
+        // Only the grid: padding, a cell, padding.
+        assert_eq!(dock_cells(&[]), (vec![], DOCK_PAD + DOCK_CELL + DOCK_PAD));
+        // Two pinned, one running: a divider before the running one and
+        // another before the grid.
+        let (cells, width) = dock_cells(&[item("a", true), item("b", true), item("c", false)]);
+        let step = DOCK_CELL + DOCK_GAP;
+        let divider = DIVIDER + DOCK_GAP;
+        assert_eq!(
+            cells,
+            vec![DOCK_PAD, DOCK_PAD + step, DOCK_PAD + 2.0 * step + divider]
+        );
+        assert_eq!(
+            width,
+            DOCK_PAD + 3.0 * step + 2.0 * divider + DOCK_CELL + DOCK_PAD
+        );
+    }
+
+    #[test]
+    fn the_panel_lists_the_search_or_every_app() {
+        let app = |name: &str| App::test(name);
+        let apps = [app("Zed"), app("chromium"), app("Alacritty")];
+        let names = |q: &str, all: bool| -> Vec<String> {
+            shown_apps(&apps, q, all)
+                .iter()
+                .map(|a| a.name.clone())
+                .collect()
+        };
+        assert!(names("", false).is_empty());
+        assert_eq!(names("", true), ["Alacritty", "chromium", "Zed"]);
+        // Typing filters, every app or not.
+        assert_eq!(names("ze", true), ["Zed"]);
+        assert_eq!(names("ze", false), ["Zed"]);
+        assert_eq!(columns(3), 3);
+        assert_eq!(columns(30), APPS_COLUMNS);
+        assert_eq!(columns(0), 1);
+    }
+
+    #[test]
+    fn prefixes_list_rows_and_the_launcher_always_does() {
+        let apps = [App::test("Zed"), App::test("zathura")];
+        let kinds = |light: bool, query: &str| {
+            let mut o = Overview::new(window::Id::unique(), Vec::new(), light);
+            o.query = query.into();
+            let found = o.found(&apps, &[]);
+            let rows = o.rows(&found);
+            let names: Vec<String> = found
+                .iter()
+                .map(|f| match f {
+                    Found::App(a) => a.name.clone(),
+                    Found::Run(c, t) => format!("run {c} {t}"),
+                    Found::Help(h) => h.prefix.into(),
+                    _ => "?".into(),
+                })
+                .collect();
+            (rows, names)
+        };
+        assert_eq!(
+            kinds(false, "z"),
+            (false, vec!["Zed".into(), "zathura".into()])
+        );
+        assert_eq!(kinds(true, "z").0, true);
+        assert_eq!(kinds(false, ":ls"), (true, vec!["run ls false".into()]));
+        assert_eq!(kinds(true, "t: htop").1, ["run htop true"]);
+        assert_eq!(kinds(false, "?").1.len(), search::HELP.len());
+        // Nothing found yet for a folder: nothing listed, not the apps.
+        assert!(kinds(false, "~/z").1.is_empty());
+        // The app library: every app, as tiles; a prefix still lists rows.
+        let mut library = Overview::new(window::Id::unique(), Vec::new(), true);
+        library.all_apps = true;
+        let found = library.found(&apps, &[]);
+        assert_eq!((found.len(), library.rows(&found)), (2, false));
+        library.query = "?".into();
+        assert!(library.rows(&library.found(&apps, &[])));
+        assert_eq!(chosen(&Key::Character("3".into())), Some(2));
+        assert_eq!(chosen(&Key::Character("0".into())), None);
+    }
 
     #[test]
     fn rows_centre_on_the_screen_as_far_as_they_fit() {
@@ -827,10 +2099,14 @@ mod tests {
     fn the_windows_used_last_are_larger() {
         // Alike in size: each after the first smaller, down to 60 %.
         let laid = cards(&[SCREEN; 6], ROOM, MIDDLE);
-        let mut widths: Vec<(usize, f32)> = laid.iter().map(|c| (c.index, c.picture.width)).collect();
+        let mut widths: Vec<(usize, f32)> =
+            laid.iter().map(|c| (c.index, c.picture.width)).collect();
         widths.sort_by_key(|w| w.0);
         assert!(widths.windows(2).all(|w| w[0].1 >= w[1].1), "{widths:?}");
-        assert!(widths[0].1 > widths[1].1 && widths[1].1 > widths[3].1, "{widths:?}");
+        assert!(
+            widths[0].1 > widths[1].1 && widths[1].1 > widths[3].1,
+            "{widths:?}"
+        );
         // The floor: the fifth and after alike, at 70 %.
         assert_eq!(widths[4].1, widths[5].1);
         assert!((widths[5].1 / widths[0].1 - 0.7).abs() < 0.01, "{widths:?}");
@@ -838,14 +2114,16 @@ mod tests {
 
     #[test]
     fn a_swipe_speeding_up_is_one_push() {
-        let mut overview = Overview::new(window::Id::unique(), Vec::new());
+        let mut overview = Overview::new(window::Id::unique(), Vec::new(), false);
         let t0 = Instant::now();
         let ms = |n: u64| t0 + Duration::from_millis(n);
         let pixels = |y: f32| ScrollDelta::Pixels { x: 0.0, y };
         // Starts slow, gets fast, stays fast for 300 ms, short of 400 px.
         let mut steps = overview.scrolled(pixels(-1.0), ms(0));
         let mut at = 0;
-        for y in [2.0, 3.0, 5.0, 8.0, 12.0, 16.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0] {
+        for y in [
+            2.0, 3.0, 5.0, 8.0, 12.0, 16.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0,
+        ] {
             at += 20;
             steps += overview.scrolled(pixels(-y), ms(at));
         }
@@ -854,7 +2132,7 @@ mod tests {
 
     #[test]
     fn a_fresh_push_mid_scroll_steps() {
-        let mut overview = Overview::new(window::Id::unique(), Vec::new());
+        let mut overview = Overview::new(window::Id::unique(), Vec::new(), false);
         let t0 = Instant::now();
         let ms = |n: u64| t0 + Duration::from_millis(n);
         let pixels = |y: f32| ScrollDelta::Pixels { x: 0.0, y };
@@ -884,7 +2162,7 @@ mod tests {
 
     #[test]
     fn a_scroll_steps_at_once_then_with_friction() {
-        let mut overview = Overview::new(window::Id::unique(), Vec::new());
+        let mut overview = Overview::new(window::Id::unique(), Vec::new(), false);
         let t0 = Instant::now();
         let ms = |n: u64| t0 + Duration::from_millis(n);
         let line = |y: f32| ScrollDelta::Lines { x: 0.0, y };
@@ -922,7 +2200,12 @@ mod tests {
         assert!(cards(&[], ROOM, MIDDLE).is_empty());
         for n in 1..=12 {
             let windows: Vec<Size> = (0..n)
-                .map(|i| Size::new(800.0 + 150.0 * (i % 4) as f32, 600.0 + 90.0 * (i % 3) as f32))
+                .map(|i| {
+                    Size::new(
+                        800.0 + 150.0 * (i % 4) as f32,
+                        600.0 + 90.0 * (i % 3) as f32,
+                    )
+                })
                 .collect();
             let laid = cards(&windows, ROOM, MIDDLE);
             let left = laid.iter().map(|c| c.at.x).fold(f32::MAX, f32::min);
@@ -932,8 +2215,14 @@ mod tests {
                 .iter()
                 .map(|c| c.at.y + card_height(c.picture))
                 .fold(0.0, f32::max);
-            assert!(left >= 0.0 && right <= ROOM.width + 1.0, "{n}: {left}..{right}");
-            assert!(top >= 0.0 && bottom <= ROOM.height + 1.0, "{n}: {top}..{bottom}");
+            assert!(
+                left >= 0.0 && right <= ROOM.width + 1.0,
+                "{n}: {left}..{right}"
+            );
+            assert!(
+                top >= 0.0 && bottom <= ROOM.height + 1.0,
+                "{n}: {top}..{bottom}"
+            );
             assert!((top - (ROOM.height - bottom)).abs() <= 1.5, "{n} down");
             // Rows (cards sharing a line through their middles) centred.
             let mut rows: Vec<Vec<&Card>> = Vec::new();
@@ -950,7 +2239,11 @@ mod tests {
             for row in rows {
                 let l = row.iter().map(|c| c.at.x).fold(f32::MAX, f32::min);
                 let r = row.iter().map(|c| c.at.x + c.width).fold(0.0, f32::max);
-                assert!((l - (ROOM.width - r)).abs() <= 1.5, "{n}: row of {}", row.len());
+                assert!(
+                    (l - (ROOM.width - r)).abs() <= 1.5,
+                    "{n}: row of {}",
+                    row.len()
+                );
             }
         }
     }

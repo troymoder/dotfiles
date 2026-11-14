@@ -163,6 +163,8 @@ pub enum Message {
     ResetCamera(String),
     /// Every network interface listed in the System menu, or just the one in use.
     ToggleNetAll,
+    /// A Nix build's processes, in btop in a terminal.
+    InspectBuild(backend::nixos::Build),
     StopShare(u32),
     /// The panel with a menu already open: the privacy pill on the panel does this.
     OpenCard(Card),
@@ -927,6 +929,10 @@ impl App {
                 });
             }
             Message::ToggleNetAll => self.net_all = !self.net_all,
+            Message::InspectBuild(build) => {
+                backend::nixos::inspect(&build);
+                return self.close_popup();
+            }
             Message::StopShare(node) => {
                 return Task::future(async move {
                     backend::privacy::stop_share(node).await;
