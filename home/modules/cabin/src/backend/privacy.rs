@@ -47,7 +47,10 @@ impl Privacy {
 }
 
 async fn pactl(what: &str) -> Vec<Value> {
-    let output = tokio::process::Command::new("pactl").args(["-f", "json", "list", what]).output().await;
+    let output = tokio::process::Command::new("pactl")
+        .args(["-f", "json", "list", what])
+        .output()
+        .await;
     match output {
         Ok(output) => serde_json::from_slice::<Vec<Value>>(&output.stdout).unwrap_or_default(),
         Err(_) => Vec::new(),
@@ -64,13 +67,21 @@ async fn recording() -> Vec<String> {
     let monitors: HashSet<u64> = pactl("sources")
         .await
         .iter()
-        .filter(|s| s["monitor_source"].as_str().is_some_and(|m| !m.is_empty() && m != "n/a") || s["name"].as_str().is_some_and(|n| n.ends_with(".monitor")))
+        .filter(|s| {
+            s["monitor_source"]
+                .as_str()
+                .is_some_and(|m| !m.is_empty() && m != "n/a")
+                || s["name"].as_str().is_some_and(|n| n.ends_with(".monitor"))
+        })
         .filter_map(|s| s["index"].as_u64())
         .collect();
     let mut apps = Vec::new();
     for output in pactl("source-outputs").await {
-        let from_monitor = output["source"].as_u64().is_some_and(|s| monitors.contains(&s));
-        let meter = property(&output, "stream.monitor") == Some("true") || property(&output, "media.name") == Some("Peak detect");
+        let from_monitor = output["source"]
+            .as_u64()
+            .is_some_and(|s| monitors.contains(&s));
+        let meter = property(&output, "stream.monitor") == Some("true")
+            || property(&output, "media.name") == Some("Peak detect");
         if from_monitor || meter || output["corked"].as_bool().unwrap_or(false) {
             continue;
         }
@@ -124,7 +135,8 @@ fn is_portal_source(props: &Value) -> bool {
     if props["api.v4l2.path"].is_string() {
         return false;
     }
-    let by_app = str_of(props, "application.name").is_some_and(|a| has_any(a, &["xdg-desktop-portal", "cosmic"]));
+    let by_app = str_of(props, "application.name")
+        .is_some_and(|a| has_any(a, &["xdg-desktop-portal", "cosmic"]));
     let by_name = ["node.name", "node.description"]
         .iter()
         .filter_map(|k| str_of(props, k))
@@ -134,13 +146,28 @@ fn is_portal_source(props: &Value) -> bool {
 
 /// A display connector name such as eDP-1, DP-3 or HDMI-A-1 in the text.
 fn connector(text: &str) -> Option<&str> {
-    const PREFIXES: [&str; 11] = ["edp", "dp", "hdmi-a", "hdmi-b", "dvi-d", "dvi-i", "vga", "lvds", "dsi", "virtual", "writeback"];
-    text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-')).find(|token| {
-        let Some((prefix, number)) = token.rsplit_once('-') else {
-            return false;
-        };
-        !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()) && PREFIXES.contains(&prefix.to_lowercase().as_str())
-    })
+    const PREFIXES: [&str; 11] = [
+        "edp",
+        "dp",
+        "hdmi-a",
+        "hdmi-b",
+        "dvi-d",
+        "dvi-i",
+        "vga",
+        "lvds",
+        "dsi",
+        "virtual",
+        "writeback",
+    ];
+    text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+        .find(|token| {
+            let Some((prefix, number)) = token.rsplit_once('-') else {
+                return false;
+            };
+            !number.is_empty()
+                && number.bytes().all(|b| b.is_ascii_digit())
+                && PREFIXES.contains(&prefix.to_lowercase().as_str())
+        })
 }
 
 /// What a portal source shows, from whatever it says about itself.
@@ -152,7 +179,11 @@ fn describe(props: &Value) -> String {
         .iter()
         .filter(|(k, _)| {
             let k = k.to_lowercase();
-            k == "node.description" || k == "media.name" || k.contains("output") || k.contains("screencast") || k.contains("source")
+            k == "node.description"
+                || k == "media.name"
+                || k.contains("output")
+                || k.contains("screencast")
+                || k.contains("source")
         })
         .filter_map(|(_, v)| v.as_str())
         .collect();
@@ -167,7 +198,10 @@ fn describe(props: &Value) -> String {
 }
 
 fn app_name(props: &Value) -> String {
-    str_of(props, "application.name").or_else(|| str_of(props, "node.name")).unwrap_or("An app").to_owned()
+    str_of(props, "application.name")
+        .or_else(|| str_of(props, "node.name"))
+        .unwrap_or("An app")
+        .to_owned()
 }
 
 /// The device behind a camera node.
@@ -184,13 +218,23 @@ fn parse(objects: &[Value]) -> (Vec<Share>, Vec<CameraUse>) {
     // (producer, consumer)
     let mut links: Vec<(u32, u32)> = Vec::new();
     for object in objects {
-        let Some(kind) = object["type"].as_str() else { continue };
-        let Some(id) = object["id"].as_u64() else { continue };
+        let Some(kind) = object["type"].as_str() else {
+            continue;
+        };
+        let Some(id) = object["id"].as_u64() else {
+            continue;
+        };
         if kind.ends_with("Interface:Node") {
-            nodes.push(Node { id: id as u32, props: &object["info"]["props"] });
+            nodes.push(Node {
+                id: id as u32,
+                props: &object["info"]["props"],
+            });
         } else if kind.ends_with("Interface:Link") {
             let info = &object["info"];
-            if let (Some(out), Some(inp)) = (info["output-node-id"].as_u64(), info["input-node-id"].as_u64()) {
+            if let (Some(out), Some(inp)) = (
+                info["output-node-id"].as_u64(),
+                info["input-node-id"].as_u64(),
+            ) {
                 links.push((out as u32, inp as u32));
             }
         }
@@ -199,11 +243,16 @@ fn parse(objects: &[Value]) -> (Vec<Share>, Vec<CameraUse>) {
     let portals: Vec<&Node> = nodes.iter().filter(|n| is_portal_source(n.props)).collect();
     let portal_ids: HashSet<u32> = portals.iter().map(|n| n.id).collect();
     // A consumer not linked yet may still name its target node.
-    let portal_serials: HashSet<u64> = portals.iter().filter_map(|n| n.props["object.serial"].as_u64()).collect();
+    let portal_serials: HashSet<u64> = portals
+        .iter()
+        .filter_map(|n| n.props["object.serial"].as_u64())
+        .collect();
     let targets_portal = |props: &Value| {
         ["target.object", "node.target"].iter().any(|k| {
             let v = &props[k];
-            let n = v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()));
+            let n = v
+                .as_u64()
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()));
             n.is_some_and(|n| portal_ids.contains(&(n as u32)) || portal_serials.contains(&n))
         })
     };
@@ -216,11 +265,31 @@ fn parse(objects: &[Value]) -> (Vec<Share>, Vec<CameraUse>) {
             .filter(|(out, _)| *out == portal.id)
             .filter_map(|(_, inp)| node(*inp))
             .map(|n| app_name(n.props))
-            .chain(nodes.iter().filter(|n| targets_portal(n.props) && str_of(n.props, "media.class") == Some("Stream/Input/Video")).map(|n| app_name(n.props)))
+            .chain(
+                nodes
+                    .iter()
+                    .filter(|n| {
+                        targets_portal(n.props)
+                            && str_of(n.props, "media.class") == Some("Stream/Input/Video")
+                    })
+                    .map(|n| app_name(n.props)),
+            )
             .collect();
-        let apps = if consumers.is_empty() { vec![str_of(portal.props, "application.name").unwrap_or("An app").to_owned()] } else { consumers };
+        let apps = if consumers.is_empty() {
+            vec![
+                str_of(portal.props, "application.name")
+                    .unwrap_or("An app")
+                    .to_owned(),
+            ]
+        } else {
+            consumers
+        };
         for app in apps {
-            let share = Share { app, what: what.clone(), node: portal.id };
+            let share = Share {
+                app,
+                what: what.clone(),
+                node: portal.id,
+            };
             if !screen.contains(&share) {
                 screen.push(share);
             }
@@ -228,13 +297,23 @@ fn parse(objects: &[Value]) -> (Vec<Share>, Vec<CameraUse>) {
     }
 
     let mut camera: Vec<CameraUse> = Vec::new();
-    for consumer in nodes.iter().filter(|n| str_of(n.props, "media.class") == Some("Stream/Input/Video")) {
-        let producers: Vec<u32> = links.iter().filter(|(_, inp)| *inp == consumer.id).map(|(out, _)| *out).collect();
+    for consumer in nodes
+        .iter()
+        .filter(|n| str_of(n.props, "media.class") == Some("Stream/Input/Video"))
+    {
+        let producers: Vec<u32> = links
+            .iter()
+            .filter(|(_, inp)| *inp == consumer.id)
+            .map(|(out, _)| *out)
+            .collect();
         if producers.iter().any(|p| portal_ids.contains(p)) || targets_portal(consumer.props) {
             continue;
         }
         let app = app_name(consumer.props);
-        let path = producers.iter().filter_map(|p| node(*p)).find_map(|n| device_path(n.props));
+        let path = producers
+            .iter()
+            .filter_map(|p| node(*p))
+            .find_map(|n| device_path(n.props));
         let usage = CameraUse { app, node: path };
         if !camera.contains(&usage) {
             camera.push(usage);
@@ -255,14 +334,43 @@ async fn video() -> (Vec<Share>, Vec<CameraUse>) {
 }
 
 pub async fn now() -> Option<Privacy> {
-    let (screen, mut camera) = video().await;
+    let (mut screen, mut camera) = video().await;
     // Apps that open the device themselves, past PipeWire: Electron, say.
-    for held in tokio::task::spawn_blocking(holders).await.unwrap_or_default() {
+    for held in tokio::task::spawn_blocking(holders)
+        .await
+        .unwrap_or_default()
+    {
         if !camera.iter().any(|c| c.app.eq_ignore_ascii_case(&held.app)) {
             camera.push(held);
         }
     }
-    Some(Privacy { microphone: recording().await, camera, screen })
+    screen.extend(capturing().await);
+    Some(Privacy {
+        microphone: recording().await,
+        camera,
+        screen,
+    })
+}
+
+/// The node of cabin-capture's share, which never goes through the portal
+/// or PipeWire: it's stopped over the bus. (PipeWire's node 0 is its core,
+/// never a stream.)
+pub const CAPTURE: u32 = 0;
+
+/// Our own recorder's share, while it records.
+async fn capturing() -> Option<Share> {
+    let session = zbus::Connection::session().await.ok()?;
+    let what = crate::capture::RunningProxy::new(&session)
+        .await
+        .ok()?
+        .recording()
+        .await
+        .ok()?;
+    (!what.is_empty()).then(|| Share {
+        app: "cabin-capture".to_owned(),
+        what,
+        node: CAPTURE,
+    })
 }
 
 /// Processes holding a camera device node open, named for the app they are.
@@ -273,7 +381,11 @@ fn holders() -> Vec<CameraUse> {
         return Vec::new();
     };
     for proc in procs.flatten() {
-        let Some(pid) = proc.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else {
+        let Some(pid) = proc
+            .file_name()
+            .to_str()
+            .and_then(|n| n.parse::<u32>().ok())
+        else {
             continue;
         };
         if pid == me {
@@ -295,26 +407,54 @@ fn holders() -> Vec<CameraUse> {
     let mut users: Vec<CameraUse> = Vec::new();
     for (pid, node) in found {
         let app = process_name(pid);
-        if !users.iter().any(|u| u.app == app && u.node.as_deref() == Some(node.as_str())) {
-            users.push(CameraUse { app, node: Some(node) });
+        if !users
+            .iter()
+            .any(|u| u.app == app && u.node.as_deref() == Some(node.as_str()))
+        {
+            users.push(CameraUse {
+                app,
+                node: Some(node),
+            });
         }
     }
     users
 }
 
 /// Runtimes that say nothing about which app this is.
-const RUNTIMES: &[&str] = &["electron", "electron-unwrapped", "chromium-unwrapped", "chrome", "node", "nodejs", "python3", "python", "java", "sh", "bash", "wine", "wine64", "mono", "ruby", "perl"];
+const RUNTIMES: &[&str] = &[
+    "electron",
+    "electron-unwrapped",
+    "chromium-unwrapped",
+    "chrome",
+    "node",
+    "nodejs",
+    "python3",
+    "python",
+    "java",
+    "sh",
+    "bash",
+    "wine",
+    "wine64",
+    "mono",
+    "ruby",
+    "perl",
+];
 
 /// The app a process belongs to, by its name or its parents': the Nix store
 /// package it runs from (an Electron app's own package, not Electron's), else
 /// the program's name.
 pub(crate) fn process_name(pid: u32) -> String {
-    let read = |pid: u32, what: &str| std::fs::read_to_string(format!("/proc/{pid}/{what}")).unwrap_or_default();
+    let read = |pid: u32, what: &str| {
+        std::fs::read_to_string(format!("/proc/{pid}/{what}")).unwrap_or_default()
+    };
     let mut fallback: Option<String> = None;
     let mut pid = pid;
     for _ in 0..5 {
         let cmdline = read(pid, "cmdline");
-        let exe = std::fs::read_link(format!("/proc/{pid}/exe")).ok().and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned())).unwrap_or_default();
+        let exe = std::fs::read_link(format!("/proc/{pid}/exe"))
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_default();
         let comm = read(pid, "comm").trim().to_owned();
         let program = unwrap_nix(if exe.is_empty() { comm.clone() } else { exe });
         if fallback.is_none() && !program.is_empty() {
@@ -331,7 +471,12 @@ pub(crate) fn process_name(pid: u32) -> String {
             }
         }
         let status = read(pid, "status");
-        let Some(parent) = status.lines().find_map(|l| l.strip_prefix("PPid:")).and_then(|p| p.trim().parse::<u32>().ok()).filter(|p| *p > 1) else {
+        let Some(parent) = status
+            .lines()
+            .find_map(|l| l.strip_prefix("PPid:"))
+            .and_then(|p| p.trim().parse::<u32>().ok())
+            .filter(|p| *p > 1)
+        else {
             break;
         };
         pid = parent;
@@ -341,7 +486,10 @@ pub(crate) fn process_name(pid: u32) -> String {
 
 /// `.spotify-wrapped` -> `spotify`.
 fn unwrap_nix(name: String) -> String {
-    match name.strip_prefix('.').and_then(|n| n.strip_suffix("-wrapped")) {
+    match name
+        .strip_prefix('.')
+        .and_then(|n| n.strip_suffix("-wrapped"))
+    {
         Some(inner) => inner.to_owned(),
         None => name,
     }
@@ -366,14 +514,61 @@ fn store_package(arg: &str) -> Option<String> {
 }
 
 pub fn subscription() -> Subscription<Privacy> {
-    Subscription::run(|| super::watch(Duration::from_secs(3), super::no_changes, now))
+    // cabin-capture says when it starts or stops; its exit ends it too.
+    fn rules() -> Vec<zbus::MatchRule<'static>> {
+        [
+            super::signal(
+                None,
+                Some(crate::capture::BUS_PATH),
+                Some(crate::capture::BUS_NAME),
+                Some("RecordingChanged"),
+            ),
+            zbus::MatchRule::builder()
+                .msg_type(zbus::message::Type::Signal)
+                .sender("org.freedesktop.DBus")
+                .ok()
+                .and_then(|b| b.member("NameOwnerChanged").ok())
+                .and_then(|b| b.arg(0, crate::capture::BUS_NAME).ok())
+                .map(|b| b.build()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    }
+    Subscription::run(|| {
+        super::watch(
+            Duration::from_secs(3),
+            || super::bus_changes(false, rules),
+            now,
+        )
+    })
 }
 
-/// Ends a screencast by destroying the portal's source node.
+/// Ends a screencast by destroying the portal's source node, or tells
+/// cabin-capture to stop.
 pub async fn stop_share(node: u32) {
-    match tokio::process::Command::new("pw-cli").args(["destroy", &node.to_string()]).output().await {
+    if node == CAPTURE {
+        let stopped = async {
+            crate::capture::RunningProxy::new(&zbus::Connection::session().await?)
+                .await?
+                .toggle()
+                .await
+        };
+        if let Err(err) = stopped.await {
+            tracing::warn!("cannot stop cabin-capture: {err}");
+        }
+        return;
+    }
+    match tokio::process::Command::new("pw-cli")
+        .args(["destroy", &node.to_string()])
+        .output()
+        .await
+    {
         Ok(output) if output.status.success() => {}
-        Ok(output) => tracing::warn!("cannot stop screencast node {node}: {}", String::from_utf8_lossy(&output.stderr).trim()),
+        Ok(output) => tracing::warn!(
+            "cannot stop screencast node {node}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ),
         Err(err) => tracing::warn!("cannot run pw-cli to stop screencast node {node}: {err}"),
     }
 }
@@ -394,25 +589,54 @@ mod tests {
     #[test]
     fn portal_share_to_consumer() {
         let objects = vec![
-            node(90, json!({ "media.class": "Video/Source", "node.name": "cosmic-screencast", "application.name": "xdg-desktop-portal-cosmic", "object.serial": 900 })),
-            node(91, json!({ "media.class": "Stream/Input/Video", "application.name": "Chromium" })),
+            node(
+                90,
+                json!({ "media.class": "Video/Source", "node.name": "cosmic-screencast", "application.name": "xdg-desktop-portal-cosmic", "object.serial": 900 }),
+            ),
+            node(
+                91,
+                json!({ "media.class": "Stream/Input/Video", "application.name": "Chromium" }),
+            ),
             link(92, 90, 91),
         ];
         let (screen, camera) = parse(&objects);
-        assert_eq!(screen, vec![Share { app: "Chromium".into(), what: "Screen".into(), node: 90 }]);
-        assert!(camera.is_empty(), "a screencast consumer is not a camera user");
+        assert_eq!(
+            screen,
+            vec![Share {
+                app: "Chromium".into(),
+                what: "Screen".into(),
+                node: 90
+            }]
+        );
+        assert!(
+            camera.is_empty(),
+            "a screencast consumer is not a camera user"
+        );
     }
 
     #[test]
     fn portal_share_without_link_and_with_connector() {
-        let objects = vec![node(90, json!({ "media.class": "Video/Source", "node.name": "cosmic-screencast", "node.description": "Screencast of eDP-1" }))];
+        let objects = vec![node(
+            90,
+            json!({ "media.class": "Video/Source", "node.name": "cosmic-screencast", "node.description": "Screencast of eDP-1" }),
+        )];
         let (screen, _) = parse(&objects);
-        assert_eq!(screen, vec![Share { app: "An app".into(), what: "Entire screen · eDP-1".into(), node: 90 }]);
+        assert_eq!(
+            screen,
+            vec![Share {
+                app: "An app".into(),
+                what: "Entire screen · eDP-1".into(),
+                node: 90
+            }]
+        );
     }
 
     #[test]
     fn window_share() {
-        let objects = vec![node(7, json!({ "media.class": "Stream/Output/Video", "node.name": "portal-window", "media.name": "Window: Firefox" }))];
+        let objects = vec![node(
+            7,
+            json!({ "media.class": "Stream/Output/Video", "node.name": "portal-window", "media.name": "Window: Firefox" }),
+        )];
         let (screen, _) = parse(&objects);
         assert_eq!(screen[0].what, "A window");
     }
@@ -420,32 +644,69 @@ mod tests {
     #[test]
     fn camera_consumer_with_v4l2_path() {
         let objects = vec![
-            node(79, json!({ "media.class": "Video/Source", "api.v4l2.path": "/dev/video0", "object.path": "v4l2:/dev/video0", "node.name": "v4l2_input.pci-0000_c3_00.4-usb-0_1_1.0", "media.role": "Camera" })),
-            node(80, json!({ "media.class": "Stream/Input/Video", "application.name": "OBS Studio" })),
-            node(81, json!({ "media.class": "Stream/Input/Video", "application.name": "OBS Studio" })),
+            node(
+                79,
+                json!({ "media.class": "Video/Source", "api.v4l2.path": "/dev/video0", "object.path": "v4l2:/dev/video0", "node.name": "v4l2_input.pci-0000_c3_00.4-usb-0_1_1.0", "media.role": "Camera" }),
+            ),
+            node(
+                80,
+                json!({ "media.class": "Stream/Input/Video", "application.name": "OBS Studio" }),
+            ),
+            node(
+                81,
+                json!({ "media.class": "Stream/Input/Video", "application.name": "OBS Studio" }),
+            ),
             link(82, 79, 80),
             link(83, 79, 81),
         ];
         let (screen, camera) = parse(&objects);
         assert!(screen.is_empty(), "a camera is not a portal source");
-        assert_eq!(camera, vec![CameraUse { app: "OBS Studio".into(), node: Some("/dev/video0".into()) }]);
+        assert_eq!(
+            camera,
+            vec![CameraUse {
+                app: "OBS Studio".into(),
+                node: Some("/dev/video0".into())
+            }]
+        );
     }
 
     #[test]
     fn camera_consumer_without_link() {
-        let objects = vec![node(80, json!({ "media.class": "Stream/Input/Video", "node.name": "cheese" }))];
+        let objects = vec![node(
+            80,
+            json!({ "media.class": "Stream/Input/Video", "node.name": "cheese" }),
+        )];
         let (_, camera) = parse(&objects);
-        assert_eq!(camera, vec![CameraUse { app: "cheese".into(), node: None }]);
+        assert_eq!(
+            camera,
+            vec![CameraUse {
+                app: "cheese".into(),
+                node: None
+            }]
+        );
     }
 
     #[test]
     fn consumer_targeting_portal_is_a_share() {
         let objects = vec![
-            node(90, json!({ "media.class": "Video/Source", "node.name": "cosmic-screencast" })),
-            node(91, json!({ "media.class": "Stream/Input/Video", "application.name": "Zoom", "target.object": "90" })),
+            node(
+                90,
+                json!({ "media.class": "Video/Source", "node.name": "cosmic-screencast" }),
+            ),
+            node(
+                91,
+                json!({ "media.class": "Stream/Input/Video", "application.name": "Zoom", "target.object": "90" }),
+            ),
         ];
         let (screen, camera) = parse(&objects);
-        assert_eq!(screen, vec![Share { app: "Zoom".into(), what: "Screen".into(), node: 90 }]);
+        assert_eq!(
+            screen,
+            vec![Share {
+                app: "Zoom".into(),
+                what: "Screen".into(),
+                node: 90
+            }]
+        );
         assert!(camera.is_empty());
     }
 
@@ -478,10 +739,18 @@ mod live_tests {
     #[ignore]
     fn name() {
         if let Ok(pid) = std::env::var("QS_PID") {
-            println!("process {pid} is {:?}", super::process_name(pid.parse().unwrap()));
-            let cmdline = std::fs::read_to_string(format!("/proc/{pid}/cmdline")).unwrap_or_default();
+            println!(
+                "process {pid} is {:?}",
+                super::process_name(pid.parse().unwrap())
+            );
+            let cmdline =
+                std::fs::read_to_string(format!("/proc/{pid}/cmdline")).unwrap_or_default();
             for arg in cmdline.split('\0') {
-                println!("  arg {:?} -> {:?}", &arg[..arg.len().min(60)], super::store_package(arg));
+                println!(
+                    "  arg {:?} -> {:?}",
+                    &arg[..arg.len().min(60)],
+                    super::store_package(arg)
+                );
             }
             println!("  exe {:?}", std::fs::read_link(format!("/proc/{pid}/exe")));
         }

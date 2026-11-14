@@ -14,8 +14,16 @@ use cosmic::{
 pub type Text<'a> = widget::Text<'a, cosmic::Theme, cosmic::Renderer>;
 
 pub const FAMILY: &str = "Cantarell";
-pub const REGULAR: Font = Font { family: Family::Name(FAMILY), weight: Weight::Normal, ..Font::DEFAULT };
-pub const SEMIBOLD: Font = Font { family: Family::Name(FAMILY), weight: Weight::Semibold, ..Font::DEFAULT };
+pub const REGULAR: Font = Font {
+    family: Family::Name(FAMILY),
+    weight: Weight::Normal,
+    ..Font::DEFAULT
+};
+pub const SEMIBOLD: Font = Font {
+    family: Family::Name(FAMILY),
+    weight: Weight::Semibold,
+    ..Font::DEFAULT
+};
 
 /// Where the font file is, for loading it ourselves: fontconfig may not
 /// know the Nix store.
@@ -28,7 +36,10 @@ pub fn file() -> Option<std::path::PathBuf> {
         dirs.push(format!("{home}/.local/share/fonts").into());
         dirs.push(format!("{home}/.nix-profile/share/fonts/opentype").into());
     }
-    for dir in std::env::var("XDG_DATA_DIRS").unwrap_or_default().split(':') {
+    for dir in std::env::var("XDG_DATA_DIRS")
+        .unwrap_or_default()
+        .split(':')
+    {
         dirs.push(format!("{dir}/fonts/opentype").into());
         dirs.push(format!("{dir}/fonts/truetype").into());
     }
@@ -39,7 +50,10 @@ pub fn file() -> Option<std::path::PathBuf> {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            let name = path.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_lowercase())
+                .unwrap_or_default();
             if name.starts_with("cantarell") && (name.ends_with(".otf") || name.ends_with(".ttf")) {
                 return Some(path);
             }
@@ -47,8 +61,13 @@ pub fn file() -> Option<std::path::PathBuf> {
                 if let Ok(inner) = std::fs::read_dir(&path) {
                     for entry in inner.flatten() {
                         let path = entry.path();
-                        let name = path.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
-                        if name.starts_with("cantarell") && (name.ends_with(".otf") || name.ends_with(".ttf")) {
+                        let name = path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_lowercase())
+                            .unwrap_or_default();
+                        if name.starts_with("cantarell")
+                            && (name.ends_with(".otf") || name.ends_with(".ttf"))
+                        {
                             return Some(path);
                         }
                     }

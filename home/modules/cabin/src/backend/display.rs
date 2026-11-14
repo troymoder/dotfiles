@@ -21,7 +21,11 @@ impl Mode {
     /// "165 Hz", "59.95 Hz".
     pub fn hertz_label(&self) -> String {
         let hz = self.hertz();
-        if (hz - hz.round()).abs() < 0.05 { format!("{:.0} Hz", hz) } else { format!("{:.2} Hz", hz) }
+        if (hz - hz.round()).abs() < 0.05 {
+            format!("{:.0} Hz", hz)
+        } else {
+            format!("{:.2} Hz", hz)
+        }
     }
 }
 
@@ -43,7 +47,6 @@ impl Output {
     pub fn current(&self) -> Option<&Mode> {
         self.modes.iter().find(|m| m.current)
     }
-
 }
 
 /// The value of `key=` in a KDL line: `current=#true`, `model="BOE"`.
@@ -85,11 +88,14 @@ pub fn parse(kdl: &str) -> Vec<Output> {
                         let model = attribute(line, "model").unwrap_or_default();
                         output.model = format!("{make} {model}").trim().to_owned();
                     }
-                    "scale" => output.scale = words.next().and_then(|s| s.parse().ok()).unwrap_or(1.0),
+                    "scale" => {
+                        output.scale = words.next().and_then(|s| s.parse().ok()).unwrap_or(1.0)
+                    }
                     "adaptive_sync_support" => output.vrr_supported = words.next() == Some("#true"),
                     "adaptive_sync" => output.vrr = quoted(line).unwrap_or("false").to_owned(),
                     "mode" => {
-                        let numbers: Vec<u32> = words.take(3).filter_map(|n| n.parse().ok()).collect();
+                        let numbers: Vec<u32> =
+                            words.take(3).filter_map(|n| n.parse().ok()).collect();
                         if let [width, height, millihertz] = numbers[..] {
                             output.modes.push(Mode {
                                 width,
@@ -111,11 +117,18 @@ pub fn parse(kdl: &str) -> Vec<Output> {
 
 /// The outputs as cosmic-randr lists them; empty when it can't say.
 pub async fn now() -> Vec<Output> {
-    let output = tokio::process::Command::new("cosmic-randr").args(["list", "--kdl"]).env_remove("LD_LIBRARY_PATH").output().await;
+    let output = tokio::process::Command::new("cosmic-randr")
+        .args(["list", "--kdl"])
+        .env_remove("LD_LIBRARY_PATH")
+        .output()
+        .await;
     match output {
         Ok(output) if output.status.success() => parse(&String::from_utf8_lossy(&output.stdout)),
         Ok(output) => {
-            tracing::warn!("cosmic-randr list failed: {}", String::from_utf8_lossy(&output.stderr).trim());
+            tracing::warn!(
+                "cosmic-randr list failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
             Vec::new()
         }
         Err(err) => {
@@ -124,7 +137,6 @@ pub async fn now() -> Vec<Output> {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -157,8 +169,14 @@ mod tests {
         assert!(output.vrr_supported);
         assert_eq!(output.vrr, "automatic");
         assert_eq!(output.scale, 1.25);
-        assert_eq!(output.current().map(|m| (m.width, m.millihertz)), Some((2560, 165000)));
-        assert_eq!(output.current().map(Mode::hertz_label).as_deref(), Some("165 Hz"));
+        assert_eq!(
+            output.current().map(|m| (m.width, m.millihertz)),
+            Some((2560, 165000))
+        );
+        assert_eq!(
+            output.current().map(Mode::hertz_label).as_deref(),
+            Some("165 Hz")
+        );
         assert_eq!(output.modes[1].hertz_label(), "60 Hz");
     }
 }

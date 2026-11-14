@@ -30,12 +30,32 @@ pub struct Actions<M> {
 /// A row of icons at the top (do not disturb, clear), then the system's
 /// pinned notices, then the list, filling the height it's given. `leaving`
 /// says how far each dismissed card is through going, by id.
-pub fn view<'a, M: Clone + 'static>(notifications: &'a [Notification], notices: &'a [Notice], dnd: bool, actions: &Actions<M>, leaving: &[(u32, f32)]) -> Element<'a, M> {
+pub fn view<'a, M: Clone + 'static>(
+    notifications: &'a [Notification],
+    notices: &'a [Notice],
+    dnd: bool,
+    actions: &Actions<M>,
+    leaving: &[(u32, f32)],
+) -> Element<'a, M> {
     let body: Element<'a, M> = if notifications.is_empty() && notices.is_empty() {
         widget::container(
             widget::column::with_children(vec![
-                widget::container(icon("bell-off", 40)).class(theme::Container::custom(|_| widget::container::Style { icon_color: Some(palette::FAINT), ..Default::default() })).into(),
-                text::body(if dnd { "Do not disturb is on" } else { "No notifications" }).class(theme::Text::Custom(|_| cosmic::iced::widget::text::Style { color: Some(palette::FAINT), ..Default::default() })).into(),
+                widget::container(icon("bell-off", 40))
+                    .class(theme::Container::custom(|_| widget::container::Style {
+                        icon_color: Some(palette::FAINT),
+                        ..Default::default()
+                    }))
+                    .into(),
+                text::body(if dnd {
+                    "Do not disturb is on"
+                } else {
+                    "No notifications"
+                })
+                .class(theme::Text::Custom(|_| cosmic::iced::widget::text::Style {
+                    color: Some(palette::FAINT),
+                    ..Default::default()
+                }))
+                .into(),
             ])
             .spacing(10)
             .align_x(Alignment::Center),
@@ -44,23 +64,57 @@ pub fn view<'a, M: Clone + 'static>(notifications: &'a [Notification], notices: 
         .height(Length::Fill)
         .into()
     } else {
-        let progress = |id: u32| leaving.iter().find(|(l, _)| *l == id).map_or(0.0, |(_, t)| *t);
-        let cards: Vec<Element<'a, M>> = notices.iter().map(|n| notice_card(n, actions)).chain(notifications.iter().map(|n| card(n, actions, progress(n.id)))).collect();
-        widget::scrollable(widget::column::with_children(cards).spacing(8).width(Length::Fill))
-            .height(Length::Fill)
-            .into()
+        let progress = |id: u32| {
+            leaving
+                .iter()
+                .find(|(l, _)| *l == id)
+                .map_or(0.0, |(_, t)| *t)
+        };
+        let cards: Vec<Element<'a, M>> = notices
+            .iter()
+            .map(|n| notice_card(n, actions))
+            .chain(
+                notifications
+                    .iter()
+                    .map(|n| card(n, actions, progress(n.id))),
+            )
+            .collect();
+        widget::scrollable(
+            widget::column::with_children(cards)
+                .spacing(8)
+                .width(Length::Fill),
+        )
+        .height(Length::Fill)
+        .into()
     };
     // Flat icons: the bell crossed while held back, the bin to clear.
     let header = widget::row::with_children(vec![
         text::heading("Notifications").into(),
         widget::space::horizontal().into(),
-        icon_button(if dnd { "bell-off" } else { "bell" }, dnd, Some((actions.toggle_dnd)(!dnd))),
+        icon_button(
+            if dnd { "bell-off" } else { "bell" },
+            dnd,
+            Some((actions.toggle_dnd)(!dnd)),
+        ),
         // Nothing to clear (the pinned notices stay): it can't be pressed.
-        icon_button("trash", false, notifications.iter().any(|n| !leaving.iter().any(|(id, _)| *id == n.id)).then(|| (actions.clear)())),
+        icon_button(
+            "trash",
+            false,
+            notifications
+                .iter()
+                .any(|n| !leaving.iter().any(|(id, _)| *id == n.id))
+                .then(|| (actions.clear)()),
+        ),
     ])
     .spacing(4)
     .align_y(Alignment::Center);
-    widget::column::with_children(vec![widget::container(header).padding([0, 0, 10, 4]).into(), body]).width(Length::Fill).height(Length::Fill).into()
+    widget::column::with_children(vec![
+        widget::container(header).padding([0, 0, 10, 4]).into(),
+        body,
+    ])
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .into()
 }
 
 /// A bare icon that does something: no plate, a shade under the pointer;
@@ -75,24 +129,32 @@ fn icon_button<'a, M: Clone + 'a>(name: &str, on: bool, message: Option<M>) -> E
         palette::alpha(palette::TEXT, 0.28)
     };
     let style = move |hovered: bool| widget::button::Style {
-        background: Some(Background::Color(if hovered && enabled { palette::SURFACE_HOVER } else { cosmic::iced::Color::TRANSPARENT })),
+        background: Some(Background::Color(if hovered && enabled {
+            palette::SURFACE_HOVER
+        } else {
+            cosmic::iced::Color::TRANSPARENT
+        })),
         icon_color: Some(color),
         text_color: Some(color),
         border_radius: 10.0.into(),
         ..widget::button::Style::new()
     };
-    widget::button::custom(widget::container(icon(name, 17)).center(Length::Fill).class(super::inherit()))
-        .width(Length::Fixed(34.0))
-        .height(Length::Fixed(34.0))
-        .padding(0)
-        .class(theme::Button::Custom {
-            active: Box::new(move |_, _| style(false)),
-            disabled: Box::new(move |_| style(false)),
-            hovered: Box::new(move |_, _| style(true)),
-            pressed: Box::new(move |_, _| style(true)),
-        })
-        .on_press_maybe(message)
-        .into()
+    widget::button::custom(
+        widget::container(icon(name, 17))
+            .center(Length::Fill)
+            .class(super::inherit()),
+    )
+    .width(Length::Fixed(34.0))
+    .height(Length::Fixed(34.0))
+    .padding(0)
+    .class(theme::Button::Custom {
+        active: Box::new(move |_, _| style(false)),
+        disabled: Box::new(move |_| style(false)),
+        hovered: Box::new(move |_, _| style(true)),
+        pressed: Box::new(move |_, _| style(true)),
+    })
+    .on_press_maybe(message)
+    .into()
 }
 
 /// How long ago: "now", "5 min ago", "2 h ago", "3 d ago".
@@ -118,42 +180,73 @@ const LEAVE_SLIDE: f32 = 24.0;
 
 /// A notification's card. `leaving` is how far through going it is, 0 to
 /// 1: it fades and slides right, and takes no presses meanwhile.
-fn card<'a, M: Clone + 'static>(notification: &'a Notification, actions: &Actions<M>, leaving: f32) -> Element<'a, M> {
+fn card<'a, M: Clone + 'static>(
+    notification: &'a Notification,
+    actions: &Actions<M>,
+    leaving: f32,
+) -> Element<'a, M> {
     let a = 1.0 - leaving.clamp(0.0, 1.0);
     let live = leaving <= 0.0;
     // An app's own icon is a picture that can't fade: gone halfway.
     let app_icon: Element<'a, M> = if a < 0.5 {
-        widget::space::horizontal().width(Length::Fixed(14.0)).into()
+        widget::space::horizontal()
+            .width(Length::Fixed(14.0))
+            .into()
     } else if notification.icon.starts_with('/') {
-        widget::icon::from_path(notification.icon.clone().into()).icon().size(14).into()
+        widget::icon::from_path(notification.icon.clone().into())
+            .icon()
+            .size(14)
+            .into()
     } else if super::icons::known(&notification.icon) {
-        widget::container(icon(&notification.icon, 14)).class(theme::Container::custom(move |_| widget::container::Style { icon_color: Some(palette::alpha(palette::TEXT, a)), ..Default::default() })).into()
+        widget::container(icon(&notification.icon, 14))
+            .class(theme::Container::custom(move |_| {
+                widget::container::Style {
+                    icon_color: Some(palette::alpha(palette::TEXT, a)),
+                    ..Default::default()
+                }
+            }))
+            .into()
     } else {
-        widget::icon::from_name(notification.icon.as_str()).size(64).icon().size(14).into()
+        widget::icon::from_name(notification.icon.as_str())
+            .size(64)
+            .icon()
+            .size(14)
+            .into()
     };
     let header = widget::row::with_children(vec![
         app_icon,
-        text::small(notification.app.clone()).class(faint(0.7, a)).into(),
-        widget::space::horizontal().into(),
-        text::small(ago(notification.time)).class(faint(0.7, a)).into(),
-        widget::button::custom(widget::container(icon("x", 14)).center(Length::Fill).class(super::inherit()))
-            .width(Length::Fixed(24.0))
-            .height(Length::Fixed(24.0))
-            .padding(0)
-            .class(theme::Button::Custom {
-                active: Box::new(move |_, _| x_style(false, a)),
-                disabled: Box::new(move |_| x_style(false, a)),
-                hovered: Box::new(move |_, _| x_style(true, a)),
-                pressed: Box::new(move |_, _| x_style(true, a)),
-            })
-            .on_press_maybe(live.then(|| (actions.dismiss)(notification.id)))
+        text::small(notification.app.clone())
+            .class(faint(0.7, a))
             .into(),
+        widget::space::horizontal().into(),
+        text::small(ago(notification.time))
+            .class(faint(0.7, a))
+            .into(),
+        widget::button::custom(
+            widget::container(icon("x", 14))
+                .center(Length::Fill)
+                .class(super::inherit()),
+        )
+        .width(Length::Fixed(24.0))
+        .height(Length::Fixed(24.0))
+        .padding(0)
+        .class(theme::Button::Custom {
+            active: Box::new(move |_, _| x_style(false, a)),
+            disabled: Box::new(move |_| x_style(false, a)),
+            hovered: Box::new(move |_, _| x_style(true, a)),
+            pressed: Box::new(move |_, _| x_style(true, a)),
+        })
+        .on_press_maybe(live.then(|| (actions.dismiss)(notification.id)))
+        .into(),
     ])
     .spacing(8)
     .align_y(Alignment::Center);
     let mut column = widget::column::with_capacity(5).spacing(2).push(header);
     if !notification.summary.is_empty() {
-        column = column.push(text::title(notification.summary.clone()).class(theme::Text::Color(palette::alpha(palette::TEXT, a))));
+        column = column.push(
+            text::title(notification.summary.clone())
+                .class(theme::Text::Color(palette::alpha(palette::TEXT, a))),
+        );
     }
     if !notification.body.is_empty() {
         column = column.push(text::sized(notification.body.clone(), 12.5).class(faint(0.78, a)));
@@ -176,7 +269,9 @@ fn card<'a, M: Clone + 'static>(notification: &'a Notification, actions: &Action
         })
         .collect();
     if !buttons.is_empty() {
-        column = column.push(widget::container(widget::row::with_children(buttons).spacing(6)).padding([6, 0, 0, 0]));
+        column = column.push(
+            widget::container(widget::row::with_children(buttons).spacing(6)).padding([6, 0, 0, 0]),
+        );
     }
     if let Some(image) = &notification.image {
         column = column.push(
@@ -191,8 +286,11 @@ fn card<'a, M: Clone + 'static>(notification: &'a Notification, actions: &Action
             .padding([8, 0, 0, 0]),
         );
     }
-    let opens = notification.actions.iter().any(|(key, _)| key == "default") && !notification.restored;
-    let body = widget::container(column).width(Length::Fill).padding([12, 14]);
+    let opens =
+        notification.actions.iter().any(|(key, _)| key == "default") && !notification.restored;
+    let body = widget::container(column)
+        .width(Length::Fill)
+        .padding([12, 14]);
     let card: Element<'a, M> = match opens {
         true => widget::button::custom(body)
             .width(Length::Fill)
@@ -206,16 +304,31 @@ fn card<'a, M: Clone + 'static>(notification: &'a Notification, actions: &Action
             .on_press_maybe(live.then(|| (actions.action)(notification.id, "default".to_owned())))
             .into(),
         false => body
-            .class(theme::Container::custom(move |_| widget::container::Style {
-                background: Some(Background::Color(palette::alpha(palette::CARD, palette::CARD.a * a))),
-                text_color: Some(palette::alpha(palette::TEXT, a)),
-                icon_color: Some(palette::alpha(palette::TEXT, a)),
-                border: cosmic::iced::Border { radius: 16.0.into(), ..Default::default() },
-                ..Default::default()
+            .class(theme::Container::custom(move |_| {
+                widget::container::Style {
+                    background: Some(Background::Color(palette::alpha(
+                        palette::CARD,
+                        palette::CARD.a * a,
+                    ))),
+                    text_color: Some(palette::alpha(palette::TEXT, a)),
+                    icon_color: Some(palette::alpha(palette::TEXT, a)),
+                    border: cosmic::iced::Border {
+                        radius: 16.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
             }))
             .into(),
     };
-    if live { card } else { Element::new(Shifted { child: card, by: LEAVE_SLIDE * leaving }) }
+    if live {
+        card
+    } else {
+        Element::new(Shifted {
+            child: card,
+            by: LEAVE_SLIDE * leaving,
+        })
+    }
 }
 
 /// Something drawn moved right by so many pixels, its room unchanged: a
@@ -244,7 +357,10 @@ impl<M> cosmic::iced::advanced::Widget<M, cosmic::Theme, cosmic::Renderer> for S
         renderer: &cosmic::Renderer,
         limits: &cosmic::iced::advanced::layout::Limits,
     ) -> cosmic::iced::advanced::layout::Node {
-        let child = self.child.as_widget_mut().layout(&mut tree.children[0], renderer, limits);
+        let child = self
+            .child
+            .as_widget_mut()
+            .layout(&mut tree.children[0], renderer, limits);
         cosmic::iced::advanced::layout::Node::with_children(child.size(), vec![child])
     }
 
@@ -263,7 +379,15 @@ impl<M> cosmic::iced::advanced::Widget<M, cosmic::Theme, cosmic::Renderer> for S
             return;
         };
         renderer.with_translation(cosmic::iced::Vector::new(self.by, 0.0), |renderer| {
-            self.child.as_widget().draw(&tree.children[0], renderer, theme, style, child, cursor, viewport);
+            self.child.as_widget().draw(
+                &tree.children[0],
+                renderer,
+                theme,
+                style,
+                child,
+                cursor,
+                viewport,
+            );
         });
     }
 }
@@ -271,16 +395,33 @@ impl<M> cosmic::iced::advanced::Widget<M, cosmic::Theme, cosmic::Renderer> for S
 /// A notice the system pins: amber-edged, a pin where the close button
 /// would be, its button if it has one.
 fn notice_card<'a, M: Clone + 'static>(notice: &'a Notice, actions: &Actions<M>) -> Element<'a, M> {
-    let amber = |_: &cosmic::Theme| widget::container::Style { icon_color: Some(palette::AMBER), ..Default::default() };
+    let amber = |_: &cosmic::Theme| widget::container::Style {
+        icon_color: Some(palette::AMBER),
+        ..Default::default()
+    };
     let header = widget::row::with_children(vec![
-        widget::container(icon(notice.icon, 14)).class(theme::Container::custom(amber)).into(),
+        widget::container(icon(notice.icon, 14))
+            .class(theme::Container::custom(amber))
+            .into(),
         text::small("NixOS").class(faint(0.7, 1.0)).into(),
         widget::space::horizontal().into(),
-        widget::container(icon("pinned", 13)).class(theme::Container::custom(|_| widget::container::Style { icon_color: Some(palette::MUTED), ..Default::default() })).padding([0, 5]).into(),
+        widget::container(icon("pinned", 13))
+            .class(theme::Container::custom(|_| widget::container::Style {
+                icon_color: Some(palette::MUTED),
+                ..Default::default()
+            }))
+            .padding([0, 5])
+            .into(),
     ])
     .spacing(8)
     .align_y(Alignment::Center);
-    let mut column = widget::column::with_capacity(4).spacing(2).push(header).push(text::title(notice.title.clone()).class(theme::Text::Color(palette::rgb_(0xf6, 0xcf, 0x94))));
+    let mut column = widget::column::with_capacity(4)
+        .spacing(2)
+        .push(header)
+        .push(
+            text::title(notice.title.clone())
+                .class(theme::Text::Color(palette::rgb_(0xf6, 0xcf, 0x94))),
+        );
     column = column.push(text::sized(notice.body.clone(), 12.5).class(faint(0.78, 1.0)));
     if let Some((label, action)) = notice.action {
         let button = widget::button::custom(text::small(label))
@@ -301,16 +442,27 @@ fn notice_card<'a, M: Clone + 'static>(notice: &'a Notice, actions: &Actions<M>)
             background: Some(Background::Color(palette::CARD)),
             text_color: Some(palette::TEXT),
             icon_color: Some(palette::TEXT),
-            border: cosmic::iced::Border { radius: 16.0.into(), width: 1.0, color: palette::alpha(palette::AMBER, 0.45) },
+            border: cosmic::iced::Border {
+                radius: 16.0.into(),
+                width: 1.0,
+                color: palette::alpha(palette::AMBER, 0.45),
+            },
             ..Default::default()
         }))
         .into()
 }
 
 fn card_style(hovered: bool, a: f32) -> widget::button::Style {
-    let background = if hovered { palette::rgba(8, 12, 26, 0.5) } else { palette::CARD };
+    let background = if hovered {
+        palette::rgba(8, 12, 26, 0.5)
+    } else {
+        palette::CARD
+    };
     widget::button::Style {
-        background: Some(Background::Color(palette::alpha(background, background.a * a))),
+        background: Some(Background::Color(palette::alpha(
+            background,
+            background.a * a,
+        ))),
         text_color: Some(palette::alpha(palette::TEXT, a)),
         icon_color: Some(palette::alpha(palette::TEXT, a)),
         border_radius: 16.0.into(),
@@ -320,7 +472,12 @@ fn card_style(hovered: bool, a: f32) -> widget::button::Style {
 
 fn x_style(hovered: bool, a: f32) -> widget::button::Style {
     widget::button::Style {
-        background: Some(Background::Color(palette::rgba(160, 190, 235, if hovered { 0.24 } else { 0.12 } * a))),
+        background: Some(Background::Color(palette::rgba(
+            160,
+            190,
+            235,
+            if hovered { 0.24 } else { 0.12 } * a,
+        ))),
         text_color: Some(palette::alpha(palette::TEXT, a)),
         icon_color: Some(palette::alpha(palette::TEXT, a)),
         border_radius: 12.0.into(),
@@ -331,7 +488,12 @@ fn x_style(hovered: bool, a: f32) -> widget::button::Style {
 /// A pill button: a notification's action.
 fn pill_style(hovered: bool, a: f32) -> widget::button::Style {
     widget::button::Style {
-        background: Some(Background::Color(palette::rgba(160, 190, 235, if hovered { 0.18 } else { 0.10 } * a))),
+        background: Some(Background::Color(palette::rgba(
+            160,
+            190,
+            235,
+            if hovered { 0.18 } else { 0.10 } * a,
+        ))),
         text_color: Some(palette::alpha(palette::TEXT, a)),
         border_radius: 12.0.into(),
         ..widget::button::Style::new()

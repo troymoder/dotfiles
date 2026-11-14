@@ -82,15 +82,22 @@ in {
         "com.system76.CosmicPanel.Panel/v1/keep_style_on_maximize" = "true";
         # Bare Super opens the workspace overview; typing there searches via
         # the launcher (action_on_typing below).
-        # Super+S and Super+Shift+S take a screenshot (Super+S replaces ToggleStacking).
+        # Super+S takes a screenshot (replaces ToggleStacking); Super+Shift+S opens
+        # Cabin's capture overlay (snip or record a region, window or screen), and
+        # pressed again stops a recording.
         # Super+L locks (replaces Focus(Right); arrows cover focus).
         # Super+Arrow moves the window and Super+Shift+Arrow moves focus (defaults swapped).
+        # Super+Tab is Cabin's switcher with a picture of each window; Alt+Tab keeps
+        # the icons (WindowSwitcher in system_actions below).
         "com.system76.CosmicSettings.Shortcuts/v1/custom" = ''
           {
               (modifiers: [Super]): System(WorkspaceOverview),
 
+              (modifiers: [Super], key: "Tab"): Spawn("${config.modules.cabin.package}/bin/cabinctl switch next --previews"),
+              (modifiers: [Super, Shift], key: "Tab"): Spawn("${config.modules.cabin.package}/bin/cabinctl switch prev --previews"),
+
               (modifiers: [Super], key: "s"): System(Screenshot),
-              (modifiers: [Super, Shift], key: "s"): System(Screenshot),
+              (modifiers: [Super, Shift], key: "s"): Spawn("${config.modules.cabin.package}/bin/cabin-capture"),
               (modifiers: [Super], key: "l"): System(LockScreen),
 
               (modifiers: [Super], key: "Left"): Move(Left),
@@ -125,8 +132,9 @@ in {
               action_on_typing: OpenLauncher,
           )
         '';
-        # Super+T opens ghostty instead of cosmic-term. The file replaces the shipped
-        # map wholesale, so every other action is copied from it.
+        # Super+T opens ghostty instead of cosmic-term, and Alt/Super+Tab bring up
+        # Cabin's window switcher. The file replaces the shipped map wholesale, so
+        # every other action is copied from it.
         "com.system76.CosmicSettings.Shortcuts/v1/system_actions" = ''
           {
               /// Opens the application library
@@ -180,9 +188,9 @@ in {
               /// Opens the system default web browser
               WebBrowser: "xdg-open http://",
               /// Opens the (alt+tab) window switcher
-              WindowSwitcher: "cosmic-launcher alt-tab",
+              WindowSwitcher: "${config.modules.cabin.package}/bin/cabinctl switch next",
               /// Opens the (alt+shift+tab) window switcher
-              WindowSwitcherPrevious: "cosmic-launcher shift-alt-tab",
+              WindowSwitcherPrevious: "${config.modules.cabin.package}/bin/cabinctl switch prev",
               /// Opens the workspace overview
               WorkspaceOverview: "cosmic-workspaces",
           }

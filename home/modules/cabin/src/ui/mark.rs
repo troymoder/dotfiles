@@ -39,7 +39,14 @@ pub struct Marked<'a, Message> {
 
 impl<'a, Message> Marked<'a, Message> {
     pub fn new(slider: impl Into<cosmic::Element<'a, Message>>, value: f32) -> Self {
-        Self { slider: slider.into(), at: None, value: value.clamp(0.0, 1.0), label: None, red: false, level: None }
+        Self {
+            slider: slider.into(),
+            at: None,
+            value: value.clamp(0.0, 1.0),
+            label: None,
+            red: false,
+            level: None,
+        }
     }
 
     pub fn level(mut self, level: Option<f32>) -> Self {
@@ -80,8 +87,16 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for Marked<'_, Me
         Size::new(Length::Fill, Length::Shrink)
     }
 
-    fn layout(&mut self, tree: &mut Tree, renderer: &cosmic::Renderer, limits: &layout::Limits) -> layout::Node {
-        let slider = self.slider.as_widget_mut().layout(&mut tree.children[0], renderer, limits);
+    fn layout(
+        &mut self,
+        tree: &mut Tree,
+        renderer: &cosmic::Renderer,
+        limits: &layout::Limits,
+    ) -> layout::Node {
+        let slider = self
+            .slider
+            .as_widget_mut()
+            .layout(&mut tree.children[0], renderer, limits);
         let size = slider.size();
         layout::Node::with_children(size, vec![slider])
     }
@@ -98,17 +113,52 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for Marked<'_, Me
         viewport: &Rectangle,
     ) {
         if let Some(slider) = layout.children().next() {
-            self.slider.as_widget_mut().update(&mut tree.children[0], event, slider, cursor, renderer, clipboard, shell, viewport);
+            self.slider.as_widget_mut().update(
+                &mut tree.children[0],
+                event,
+                slider,
+                cursor,
+                renderer,
+                clipboard,
+                shell,
+                viewport,
+            );
         }
     }
 
-    fn mouse_interaction(&self, tree: &Tree, layout: Layout<'_>, cursor: mouse::Cursor, viewport: &Rectangle, renderer: &cosmic::Renderer) -> mouse::Interaction {
-        layout.children().next().map_or(mouse::Interaction::None, |slider| self.slider.as_widget().mouse_interaction(&tree.children[0], slider, cursor, viewport, renderer))
+    fn mouse_interaction(
+        &self,
+        tree: &Tree,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        viewport: &Rectangle,
+        renderer: &cosmic::Renderer,
+    ) -> mouse::Interaction {
+        layout
+            .children()
+            .next()
+            .map_or(mouse::Interaction::None, |slider| {
+                self.slider.as_widget().mouse_interaction(
+                    &tree.children[0],
+                    slider,
+                    cursor,
+                    viewport,
+                    renderer,
+                )
+            })
     }
 
-    fn operate(&mut self, tree: &mut Tree, layout: Layout<'_>, renderer: &cosmic::Renderer, operation: &mut dyn Operation) {
+    fn operate(
+        &mut self,
+        tree: &mut Tree,
+        layout: Layout<'_>,
+        renderer: &cosmic::Renderer,
+        operation: &mut dyn Operation,
+    ) {
         if let Some(slider) = layout.children().next() {
-            self.slider.as_widget_mut().operate(&mut tree.children[0], slider, renderer, operation);
+            self.slider
+                .as_widget_mut()
+                .operate(&mut tree.children[0], slider, renderer, operation);
         }
     }
 
@@ -124,7 +174,13 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for Marked<'_, Me
         let label = self.label.as_mut()?;
         let slider = layout.children().next()?.bounds();
         let (_, labels) = tree.children.split_at_mut(1);
-        let bubble = Bubble { label, tree: labels.first_mut()?, slider: slider + translation, value: self.value, red: self.red };
+        let bubble = Bubble {
+            label,
+            tree: labels.first_mut()?,
+            slider: slider + translation,
+            value: self.value,
+            red: self.red,
+        };
         Some(overlay::Element::new(Box::new(bubble)))
     }
 
@@ -142,7 +198,15 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for Marked<'_, Me
         let Some(slider) = children.next() else {
             return;
         };
-        self.slider.as_widget().draw(&tree.children[0], renderer, theme, style, slider, cursor, viewport);
+        self.slider.as_widget().draw(
+            &tree.children[0],
+            renderer,
+            theme,
+            style,
+            slider,
+            cursor,
+            viewport,
+        );
         let bounds = slider.bounds();
         let rail_x = bounds.x + RAIL_INSET;
         let rail_width = (bounds.width - 2.0 * RAIL_INSET).max(1.0);
@@ -157,7 +221,14 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for Marked<'_, Me
             let knob = x(self.value);
             let (gap_from, gap_to) = (knob - HANDLE / 2.0 - 1.5, knob + HANDLE / 2.0 + 1.5);
             let pieces = [
-                (start, end.min(gap_from), Color { a: 0.6, ..super::palette::ON_ACCENT }),
+                (
+                    start,
+                    end.min(gap_from),
+                    Color {
+                        a: 0.6,
+                        ..super::palette::ON_ACCENT
+                    },
+                ),
                 (start.max(gap_to), end, super::palette::ACCENT),
             ];
             for (from, to, color) in pieces {
@@ -166,8 +237,16 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for Marked<'_, Me
                 }
                 renderer.fill_quad(
                     renderer::Quad {
-                        bounds: Rectangle { x: from, y: rail_y - 1.5, width: to - from, height: 3.0 },
-                        border: Border { radius: 1.5.into(), ..Default::default() },
+                        bounds: Rectangle {
+                            x: from,
+                            y: rail_y - 1.5,
+                            width: to - from,
+                            height: 3.0,
+                        },
+                        border: Border {
+                            radius: 1.5.into(),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     Background::Color(color),
@@ -181,8 +260,16 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for Marked<'_, Me
                 let to = (x(self.value) - HANDLE / 2.0 + 2.0).max(from);
                 renderer.fill_quad(
                     renderer::Quad {
-                        bounds: Rectangle { x: from, y: rail_y - RAIL / 2.0, width: to - from, height: RAIL },
-                        border: Border { radius: 2.0.into(), ..Default::default() },
+                        bounds: Rectangle {
+                            x: from,
+                            y: rail_y - RAIL / 2.0,
+                            width: to - from,
+                            height: RAIL,
+                        },
+                        border: Border {
+                            radius: 2.0.into(),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     Background::Color(super::palette::OVER),
@@ -191,8 +278,16 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for Marked<'_, Me
             let tick: Color = super::palette::alpha(super::palette::TEXT, 0.6);
             renderer.fill_quad(
                 renderer::Quad {
-                    bounds: Rectangle { x: x(at) - 1.0, y: rail_y - 8.0, width: 2.0, height: 16.0 },
-                    border: Border { radius: 1.0.into(), ..Default::default() },
+                    bounds: Rectangle {
+                        x: x(at) - 1.0,
+                        y: rail_y - 8.0,
+                        width: 2.0,
+                        height: 16.0,
+                    },
+                    border: Border {
+                        radius: 1.0.into(),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
                 Background::Color(tick),
@@ -219,34 +314,77 @@ struct Bubble<'a, 'b, Message> {
 
 const PAD: f32 = 9.0;
 
-impl<Message> overlay::Overlay<Message, cosmic::Theme, cosmic::Renderer> for Bubble<'_, '_, Message> {
+impl<Message> overlay::Overlay<Message, cosmic::Theme, cosmic::Renderer>
+    for Bubble<'_, '_, Message>
+{
     fn layout(&mut self, renderer: &cosmic::Renderer, _bounds: Size) -> layout::Node {
-        let node = self.label.as_widget_mut().layout(self.tree, renderer, &layout::Limits::new(Size::ZERO, Size::new(200.0, 40.0)));
+        let node = self.label.as_widget_mut().layout(
+            self.tree,
+            renderer,
+            &layout::Limits::new(Size::ZERO, Size::new(200.0, 40.0)),
+        );
         let text = node.size();
         // Over the handle, a little above the rail; kept within the slider's width.
         let rail_x = self.slider.x + RAIL_INSET;
         let rail_width = (self.slider.width - 2.0 * RAIL_INSET).max(1.0);
-        let x = (rail_x + rail_width * self.value - text.width / 2.0).clamp(self.slider.x, (self.slider.x + self.slider.width - text.width).max(self.slider.x));
+        let x = (rail_x + rail_width * self.value - text.width / 2.0).clamp(
+            self.slider.x,
+            (self.slider.x + self.slider.width - text.width).max(self.slider.x),
+        );
         let y = self.slider.y + self.slider.height / 2.0 - HANDLE / 2.0 - text.height - 14.0;
         let bubble = Size::new(text.width + 2.0 * PAD, text.height + 8.0);
-        layout::Node::with_children(bubble, vec![node.move_to(Point::new(PAD, 4.0))]).move_to(Point::new(x - PAD, y - 4.0))
+        layout::Node::with_children(bubble, vec![node.move_to(Point::new(PAD, 4.0))])
+            .move_to(Point::new(x - PAD, y - 4.0))
     }
 
-    fn draw(&self, renderer: &mut cosmic::Renderer, theme: &cosmic::Theme, style: &renderer::Style, layout: Layout<'_>, cursor: mouse::Cursor) {
+    fn draw(
+        &self,
+        renderer: &mut cosmic::Renderer,
+        theme: &cosmic::Theme,
+        style: &renderer::Style,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+    ) {
         let bubble = layout.bounds();
-        let (fill, on) = if self.red { (super::palette::OVER, super::palette::ON_OVER) } else { (super::palette::KNOB, super::palette::ON_ACCENT) };
+        let (fill, on) = if self.red {
+            (super::palette::OVER, super::palette::ON_OVER)
+        } else {
+            (super::palette::KNOB, super::palette::ON_ACCENT)
+        };
         renderer.fill_quad(
             renderer::Quad {
                 bounds: bubble,
-                border: Border { radius: 8.0.into(), ..Default::default() },
-                shadow: cosmic::iced::Shadow { color: Color { a: 0.35, ..Color::BLACK }, offset: cosmic::iced::Vector::new(0.0, 2.0), blur_radius: 8.0 },
+                border: Border {
+                    radius: 8.0.into(),
+                    ..Default::default()
+                },
+                shadow: cosmic::iced::Shadow {
+                    color: Color {
+                        a: 0.35,
+                        ..Color::BLACK
+                    },
+                    offset: cosmic::iced::Vector::new(0.0, 2.0),
+                    blur_radius: 8.0,
+                },
                 ..Default::default()
             },
             Background::Color(fill),
         );
         if let Some(node) = layout.children().next() {
-            let text_style = renderer::Style { text_color: on, icon_color: on, ..*style };
-            self.label.as_widget().draw(self.tree, renderer, theme, &text_style, node, cursor, &bubble);
+            let text_style = renderer::Style {
+                text_color: on,
+                icon_color: on,
+                ..*style
+            };
+            self.label.as_widget().draw(
+                self.tree,
+                renderer,
+                theme,
+                &text_style,
+                node,
+                cursor,
+                &bubble,
+            );
         }
     }
 }

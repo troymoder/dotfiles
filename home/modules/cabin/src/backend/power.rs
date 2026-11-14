@@ -51,12 +51,15 @@ impl Battery {
     /// Where charging stops short of full: the limit's end, while it's on
     /// and not reached yet.
     pub fn charge_target(&self) -> Option<u32> {
-        self.limit.filter(|l| l.enabled && self.percentage < f64::from(l.end)).map(|l| l.end)
+        self.limit
+            .filter(|l| l.enabled && self.percentage < f64::from(l.end))
+            .map(|l| l.end)
     }
 
     /// "Full" or "80 %": where the charge is headed.
     pub fn target_name(&self) -> String {
-        self.charge_target().map_or_else(|| "Full".to_owned(), |end| format!("{end} %"))
+        self.charge_target()
+            .map_or_else(|| "Full".to_owned(), |end| format!("{end} %"))
     }
 
     /// Running out: on battery at a fifth or less. The icon shows it red.
@@ -142,19 +145,31 @@ trait DisplayDevice {
     fn capacity(&self) -> zbus::Result<f64>;
 }
 
-#[zbus::proxy(interface = "org.freedesktop.UPower", default_service = "org.freedesktop.UPower", default_path = "/org/freedesktop/UPower")]
+#[zbus::proxy(
+    interface = "org.freedesktop.UPower",
+    default_service = "org.freedesktop.UPower",
+    default_path = "/org/freedesktop/UPower"
+)]
 trait UPower {
     fn enumerate_devices(&self) -> zbus::Result<Vec<zbus::zvariant::OwnedObjectPath>>;
 }
 
-#[zbus::proxy(interface = "org.freedesktop.UPower.Device", default_service = "org.freedesktop.UPower")]
+#[zbus::proxy(
+    interface = "org.freedesktop.UPower.Device",
+    default_service = "org.freedesktop.UPower"
+)]
 trait AnyDevice {
     #[zbus(property, name = "Type")]
     fn kind(&self) -> zbus::Result<u32>;
     #[zbus(property)]
     fn charge_cycles(&self) -> zbus::Result<i32>;
     /// `kind` is "charge" or "rate"; so many seconds back, in so many points.
-    fn get_history(&self, kind: &str, timespan: u32, resolution: u32) -> zbus::Result<Vec<(u32, f64, u32)>>;
+    fn get_history(
+        &self,
+        kind: &str,
+        timespan: u32,
+        resolution: u32,
+    ) -> zbus::Result<Vec<(u32, f64, u32)>>;
     #[zbus(property)]
     fn charge_threshold_supported(&self) -> zbus::Result<bool>;
     #[zbus(property)]
@@ -201,7 +216,11 @@ async fn battery(conn: &zbus::Connection) -> Option<Battery> {
     }
     let state = device.state().await.ok()?;
     let charging = state == 1 || state == 4 || state == 5;
-    let seconds = if charging { device.time_to_full().await } else { device.time_to_empty().await };
+    let seconds = if charging {
+        device.time_to_full().await
+    } else {
+        device.time_to_empty().await
+    };
     // Charge cycles and the history are the real battery's, not the display device's.
     let mut cycles = None;
     let mut history = Vec::new();
@@ -226,8 +245,16 @@ async fn battery(conn: &zbus::Connection) -> Option<Battery> {
                     .collect();
                 history.sort_by_key(|(time, _)| *time);
                 if any.charge_threshold_supported().await.unwrap_or(false) {
-                    let end = any.charge_end_threshold().await.ok().filter(|end| (1..100).contains(end)).unwrap_or(80);
-                    limit = Some(ChargeLimit { enabled: any.charge_threshold_enabled().await.unwrap_or(false), end });
+                    let end = any
+                        .charge_end_threshold()
+                        .await
+                        .ok()
+                        .filter(|end| (1..100).contains(end))
+                        .unwrap_or(80);
+                    limit = Some(ChargeLimit {
+                        enabled: any.charge_threshold_enabled().await.unwrap_or(false),
+                        end,
+                    });
                 }
                 break;
             }
@@ -237,8 +264,12 @@ async fn battery(conn: &zbus::Connection) -> Option<Battery> {
     let mut time_left = seconds.ok().filter(|s| *s > 0).map(|s| s as u64);
     // UPower times the charge to 100 %; with the limit on it stops at the
     // limit, and the energy still to come is in proportion to the percent.
-    if let Some(end) = limit.filter(|l| charging && l.enabled && percentage < f64::from(l.end)).map(|l| f64::from(l.end)) {
-        time_left = time_left.map(|s| (s as f64 * (end - percentage) / (100.0 - percentage)) as u64);
+    if let Some(end) = limit
+        .filter(|l| charging && l.enabled && percentage < f64::from(l.end))
+        .map(|l| f64::from(l.end))
+    {
+        time_left =
+            time_left.map(|s| (s as f64 * (end - percentage) / (100.0 - percentage)) as u64);
     }
     Some(Battery {
         percentage,
@@ -263,22 +294,41 @@ async fn battery(conn: &zbus::Connection) -> Option<Battery> {
 /// standard ones up to 20 V), else the most the online USB-C source could
 /// give. Not what's drawn now.
 fn charger_watts() -> Option<f32> {
-    let read = |path: std::path::PathBuf| std::fs::read_to_string(path).ok().and_then(|s| s.trim().parse::<f64>().ok());
+    let read = |path: std::path::PathBuf| {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|s| s.trim().parse::<f64>().ok())
+    };
     // Only when a source is actually plugged in.
     let online = std::fs::read_dir("/sys/class/power_supply")
         .ok()?
         .flatten()
         .map(|e| e.path())
-        .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("ucsi-source-psy")))
+        .filter(|p| {
+            p.file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("ucsi-source-psy"))
+        })
         .find(|p| read(p.join("online")) == Some(1.0))?;
     let mut best: Option<f64> = None;
     if let Ok(partners) = std::fs::read_dir("/sys/class/typec") {
-        for partner in partners.flatten().map(|e| e.path()).filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().ends_with("-partner"))) {
-            let Ok(profiles) = std::fs::read_dir(partner.join("usb_power_delivery/source-capabilities")) else {
+        for partner in partners.flatten().map(|e| e.path()).filter(|p| {
+            p.file_name()
+                .is_some_and(|n| n.to_string_lossy().ends_with("-partner"))
+        }) {
+            let Ok(profiles) =
+                std::fs::read_dir(partner.join("usb_power_delivery/source-capabilities"))
+            else {
                 continue;
             };
-            for profile in profiles.flatten().map(|e| e.path()).filter(|p| p.to_string_lossy().contains("fixed_supply")) {
-                let (Some(millivolts), Some(milliamps)) = (read(profile.join("voltage")), read(profile.join("maximum_current"))) else {
+            for profile in profiles
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.to_string_lossy().contains("fixed_supply"))
+            {
+                let (Some(millivolts), Some(milliamps)) = (
+                    read(profile.join("voltage")),
+                    read(profile.join("maximum_current")),
+                ) else {
                     continue;
                 };
                 let watts = millivolts / 1000.0 * milliamps / 1000.0;
@@ -289,7 +339,9 @@ fn charger_watts() -> Option<f32> {
     let watts = match best {
         Some(watts) => watts,
         None => {
-            let volts = read(online.join("voltage_max")).or_else(|| read(online.join("voltage_now")))? / 1e6;
+            let volts = read(online.join("voltage_max"))
+                .or_else(|| read(online.join("voltage_now")))?
+                / 1e6;
             let amps = read(online.join("current_max"))? / 1e6;
             volts * amps
         }
@@ -308,9 +360,15 @@ async fn profiles(conn: &zbus::Connection) -> Option<Profiles> {
         .await
         .ok()?
         .iter()
-        .filter_map(|p| p.get("Profile").and_then(|v| String::try_from(v.clone()).ok()))
+        .filter_map(|p| {
+            p.get("Profile")
+                .and_then(|v| String::try_from(v.clone()).ok())
+        })
         .collect();
-    Some(Profiles { active: daemon.active_profile().await.ok()?, available })
+    Some(Profiles {
+        active: daemon.active_profile().await.ok()?,
+        available,
+    })
 }
 
 async fn keyboard(conn: &zbus::Connection) -> Option<Keyboard> {
@@ -319,7 +377,11 @@ async fn keyboard(conn: &zbus::Connection) -> Option<Keyboard> {
     if max <= 0 {
         return None;
     }
-    Some(Keyboard { level: backlight.get_brightness().await.ok()?, max, name: keyboard_name() })
+    Some(Keyboard {
+        level: backlight.get_brightness().await.ok()?,
+        max,
+        name: keyboard_name(),
+    })
 }
 
 /// Whose keyboard the backlight is, from the LED's name
@@ -338,23 +400,53 @@ fn keyboard_name() -> Option<String> {
 
 pub async fn now() -> Option<Power> {
     let conn = zbus::Connection::system().await.ok()?;
-    Some(Power { battery: battery(&conn).await, profiles: profiles(&conn).await, keyboard: keyboard(&conn).await })
+    Some(Power {
+        battery: battery(&conn).await,
+        profiles: profiles(&conn).await,
+        keyboard: keyboard(&conn).await,
+    })
 }
 
 pub fn subscription() -> Subscription<Power> {
     fn rules() -> Vec<zbus::MatchRule<'static>> {
         [
-            super::signal(None, Some("/org/freedesktop/UPower/devices/DisplayDevice"), Some("org.freedesktop.DBus.Properties"), Some("PropertiesChanged")),
+            super::signal(
+                None,
+                Some("/org/freedesktop/UPower/devices/DisplayDevice"),
+                Some("org.freedesktop.DBus.Properties"),
+                Some("PropertiesChanged"),
+            ),
             // The battery itself: its charge limit turned on or off.
-            super::signal(None, Some("/org/freedesktop/UPower/devices/battery_BAT1"), Some("org.freedesktop.DBus.Properties"), Some("PropertiesChanged")),
-            super::signal(None, Some("/net/hadess/PowerProfiles"), Some("org.freedesktop.DBus.Properties"), Some("PropertiesChanged")),
-            super::signal(None, Some("/org/freedesktop/UPower/KbdBacklight"), Some("org.freedesktop.UPower.KbdBacklight"), Some("BrightnessChanged")),
+            super::signal(
+                None,
+                Some("/org/freedesktop/UPower/devices/battery_BAT1"),
+                Some("org.freedesktop.DBus.Properties"),
+                Some("PropertiesChanged"),
+            ),
+            super::signal(
+                None,
+                Some("/net/hadess/PowerProfiles"),
+                Some("org.freedesktop.DBus.Properties"),
+                Some("PropertiesChanged"),
+            ),
+            super::signal(
+                None,
+                Some("/org/freedesktop/UPower/KbdBacklight"),
+                Some("org.freedesktop.UPower.KbdBacklight"),
+                Some("BrightnessChanged"),
+            ),
         ]
         .into_iter()
         .flatten()
         .collect()
     }
-    Subscription::run(|| super::watch(Duration::from_secs(30), || super::bus_changes(true, rules), now))
+    Subscription::run(|| {
+        super::watch(
+            Duration::from_secs(30),
+            || super::bus_changes(true, rules),
+            now,
+        )
+    })
 }
 
 /// The charge limit on or off, on the battery that has one.
@@ -363,11 +455,15 @@ pub async fn set_charge_limit(enabled: bool) {
         let conn = zbus::Connection::system().await?;
         for path in UPowerProxy::new(&conn).await?.enumerate_devices().await? {
             let device = AnyDeviceProxy::builder(&conn).path(path)?.build().await?;
-            if device.kind().await.ok() == Some(2) && device.charge_threshold_supported().await.unwrap_or(false) {
+            if device.kind().await.ok() == Some(2)
+                && device.charge_threshold_supported().await.unwrap_or(false)
+            {
                 return device.enable_charge_threshold(enabled).await;
             }
         }
-        Err(zbus::Error::Failure("no battery with a charge limit".to_owned()))
+        Err(zbus::Error::Failure(
+            "no battery with a charge limit".to_owned(),
+        ))
     };
     if let Err(err) = set.await {
         tracing::warn!("cannot set the charge limit: {err}");
@@ -377,7 +473,10 @@ pub async fn set_charge_limit(enabled: bool) {
 pub async fn set_profile(profile: String) {
     let set = async {
         let conn = zbus::Connection::system().await?;
-        PowerProfilesProxy::new(&conn).await?.set_active_profile(&profile).await
+        PowerProfilesProxy::new(&conn)
+            .await?
+            .set_active_profile(&profile)
+            .await
     };
     if let Err(err) = set.await {
         tracing::warn!("cannot set the power profile: {err}");
@@ -390,7 +489,10 @@ pub async fn set_keyboard(level: i32) {
         .send(level, |level| async move {
             let set = async {
                 let conn = zbus::Connection::system().await?;
-                KbdBacklightProxy::new(&conn).await?.set_brightness(level).await
+                KbdBacklightProxy::new(&conn)
+                    .await?
+                    .set_brightness(level)
+                    .await
             };
             if let Err(err) = set.await {
                 tracing::warn!("cannot set the keyboard backlight: {err}");

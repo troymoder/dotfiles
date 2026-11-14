@@ -46,7 +46,9 @@ impl Timeout {
     pub fn choices(self) -> &'static [u32] {
         match self {
             Self::ScreenOff => &[2, 5, 10, 15, 30],
-            Self::SuspendOnAc | Self::SuspendOnBattery => &[15, 20, 25, 30, 45, 60, 80, 90, 100, 120],
+            Self::SuspendOnAc | Self::SuspendOnBattery => {
+                &[15, 20, 25, 30, 45, 60, 80, 90, 100, 120]
+            }
         }
     }
 
@@ -64,7 +66,12 @@ pub type Idle = [Option<u32>; 3];
 
 pub fn read() -> Idle {
     let config = Config::new(ID, 1).ok();
-    Timeout::ALL.map(|t| config.as_ref().and_then(|c| c.get::<Option<u32>>(t.key()).ok()).unwrap_or_else(|| t.default_ms()))
+    Timeout::ALL.map(|t| {
+        config
+            .as_ref()
+            .and_then(|c| c.get::<Option<u32>>(t.key()).ok())
+            .unwrap_or_else(|| t.default_ms())
+    })
 }
 
 pub fn set(timeout: Timeout, ms: Option<u32>) {

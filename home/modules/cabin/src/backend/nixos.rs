@@ -38,26 +38,49 @@ fn version_date(version: &str) -> Option<NaiveDate> {
 
 pub fn read() -> Option<NixOs> {
     let link = std::fs::read_link("/nix/var/nix/profiles/system").ok()?;
-    let generation: u32 = link.to_str()?.strip_prefix("system-")?.strip_suffix("-link")?.parse().ok()?;
+    let generation: u32 = link
+        .to_str()?
+        .strip_prefix("system-")?
+        .strip_suffix("-link")?
+        .parse()
+        .ok()?;
     let today = Local::now().date_naive();
     let built_days = std::fs::symlink_metadata(Path::new("/nix/var/nix/profiles").join(&link))
         .and_then(|meta| meta.modified())
         .ok()
         .map(|time| (today - chrono::DateTime::<Local>::from(time).date_naive()).num_days());
-    let nixpkgs_days = std::fs::read_to_string("/run/current-system/nixos-version").ok().as_deref().and_then(version_date).map(|date| (today - date).num_days());
+    let nixpkgs_days = std::fs::read_to_string("/run/current-system/nixos-version")
+        .ok()
+        .as_deref()
+        .and_then(version_date)
+        .map(|date| (today - date).num_days());
     // The booted system and the current one on different kernels or initrds:
     // only a reboot brings the new ones in.
-    let differs = |part: &str| match (std::fs::canonicalize(format!("/run/booted-system/{part}")), std::fs::canonicalize(format!("/run/current-system/{part}"))) {
+    let differs = |part: &str| match (
+        std::fs::canonicalize(format!("/run/booted-system/{part}")),
+        std::fs::canonicalize(format!("/run/current-system/{part}")),
+    ) {
         (Ok(booted), Ok(current)) => booted != current,
         _ => false,
     };
     let reboot_pending = differs("kernel") || differs("initrd");
-    let kernel = |system: &str| std::fs::canonicalize(format!("{system}/kernel")).ok().as_deref().and_then(kernel_version);
+    let kernel = |system: &str| {
+        std::fs::canonicalize(format!("{system}/kernel"))
+            .ok()
+            .as_deref()
+            .and_then(kernel_version)
+    };
     let kernels = match (kernel("/run/booted-system"), kernel("/run/current-system")) {
         (Some(booted), Some(current)) if booted != current => Some((booted, current)),
         _ => None,
     };
-    Some(NixOs { generation, built_days, nixpkgs_days, reboot_pending, kernels })
+    Some(NixOs {
+        generation,
+        built_days,
+        nixpkgs_days,
+        reboot_pending,
+        kernels,
+    })
 }
 
 /// How old the nixpkgs lock may get before it's time to update.
@@ -88,14 +111,28 @@ pub fn notices(nixos: &NixOs) -> Vec<Notice> {
             Some((booted, current)) => format!("Kernel {booted} → {current}"),
             None => "The system switched to a new kernel or initrd".to_owned(),
         };
-        notices.push(Notice { icon: "alert-triangle", title: "Reboot to finish update".to_owned(), body, action: Some(("Restart", NoticeAction::Restart)) });
+        notices.push(Notice {
+            icon: "alert-triangle",
+            title: "Reboot to finish update".to_owned(),
+            body,
+            action: Some(("Restart", NoticeAction::Restart)),
+        });
     }
     if let Some(age) = nixos.nixpkgs_days.filter(|age| *age > STALE_DAYS) {
         let mut body = format!("The nixpkgs lock is {age} days old");
         if let Some(built) = nixos.built_days {
-            body.push_str(&format!(" · generation {} built {}", nixos.generation, days(built)));
+            body.push_str(&format!(
+                " · generation {} built {}",
+                nixos.generation,
+                days(built)
+            ));
         }
-        notices.push(Notice { icon: "refresh", title: "Time to update".to_owned(), body, action: None });
+        notices.push(Notice {
+            icon: "refresh",
+            title: "Time to update".to_owned(),
+            body,
+            action: None,
+        });
     }
     notices
 }
@@ -115,9 +152,15 @@ mod tests {
 
     #[test]
     fn dates_from_versions() {
-        assert_eq!(version_date("26.11.20261106.4fe25e1\n"), NaiveDate::from_ymd_opt(2026, 11, 6));
+        assert_eq!(
+            version_date("26.11.20261106.4fe25e1\n"),
+            NaiveDate::from_ymd_opt(2026, 11, 6)
+        );
         assert_eq!(version_date("garbage"), None);
         assert_eq!(days(12), "12 days ago");
-        assert_eq!(kernel_version(Path::new("/nix/store/abc-linux-6.12.10/bzImage")).as_deref(), Some("6.12.10"));
+        assert_eq!(
+            kernel_version(Path::new("/nix/store/abc-linux-6.12.10/bzImage")).as_deref(),
+            Some("6.12.10")
+        );
     }
 }

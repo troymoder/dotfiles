@@ -52,7 +52,11 @@ pub async fn now() -> Option<Weather> {
     let url = format!(
         "https://api.open-meteo.com/v1/forecast?latitude={latitude:.4}&longitude={longitude:.4}&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m&hourly=temperature_2m,weather_code&timezone=auto&forecast_days=2"
     );
-    let output = tokio::process::Command::new("curl").args(["-sfL", "--max-time", "10", &url]).output().await.ok()?;
+    let output = tokio::process::Command::new("curl")
+        .args(["-sfL", "--max-time", "10", &url])
+        .output()
+        .await
+        .ok()?;
     if !output.status.success() {
         return None;
     }
@@ -63,13 +67,26 @@ pub async fn now() -> Option<Weather> {
     let temps = json["hourly"]["temperature_2m"].as_array()?;
     let codes = json["hourly"]["weather_code"].as_array()?;
     // The next hours from the current one on, every two hours.
-    let start = times.iter().position(|t| t.as_str().is_some_and(|t| t >= now_time)).unwrap_or(0);
-    let mut hours = vec![Hour { label: "Now".to_owned(), celsius: current["temperature_2m"].as_f64()?, code: current["weather_code"].as_u64()? as u32 }];
+    let start = times
+        .iter()
+        .position(|t| t.as_str().is_some_and(|t| t >= now_time))
+        .unwrap_or(0);
+    let mut hours = vec![Hour {
+        label: "Now".to_owned(),
+        celsius: current["temperature_2m"].as_f64()?,
+        code: current["weather_code"].as_u64()? as u32,
+    }];
     for i in (start + 2..times.len()).step_by(2).take(4) {
-        let (Some(t), Some(c), Some(code)) = (times[i].as_str(), temps[i].as_f64(), codes[i].as_u64()) else {
+        let (Some(t), Some(c), Some(code)) =
+            (times[i].as_str(), temps[i].as_f64(), codes[i].as_u64())
+        else {
             continue;
         };
-        hours.push(Hour { label: t.get(11..16).unwrap_or("").to_owned(), celsius: c, code: code as u32 });
+        hours.push(Hour {
+            label: t.get(11..16).unwrap_or("").to_owned(),
+            celsius: c,
+            code: code as u32,
+        });
     }
     Some(Weather {
         place: place.name,

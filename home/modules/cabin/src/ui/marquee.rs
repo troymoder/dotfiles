@@ -37,7 +37,10 @@ impl<'a, Message> Marquee<'a, Message> {
     /// Two versions of the same text: `make(true)` cut short to one line,
     /// `make(false)` whole.
     pub fn new(make: impl Fn(bool) -> cosmic::Element<'a, Message>) -> Self {
-        Self { short: make(true), full: make(false) }
+        Self {
+            short: make(true),
+            full: make(false),
+        }
     }
 }
 
@@ -62,12 +65,24 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for Marquee<'_, M
         Size::new(Length::Fill, Length::Shrink)
     }
 
-    fn layout(&mut self, tree: &mut Tree, renderer: &cosmic::Renderer, limits: &layout::Limits) -> layout::Node {
+    fn layout(
+        &mut self,
+        tree: &mut Tree,
+        renderer: &cosmic::Renderer,
+        limits: &layout::Limits,
+    ) -> layout::Node {
         let width = limits.max().width;
         let bounded = layout::Limits::new(Size::ZERO, Size::new(width, limits.max().height));
-        let short = self.short.as_widget_mut().layout(&mut tree.children[0], renderer, &bounded);
-        let unbounded = layout::Limits::new(Size::ZERO, Size::new(f32::INFINITY, limits.max().height));
-        let full = self.full.as_widget_mut().layout(&mut tree.children[1], renderer, &unbounded);
+        let short = self
+            .short
+            .as_widget_mut()
+            .layout(&mut tree.children[0], renderer, &bounded);
+        let unbounded =
+            layout::Limits::new(Size::ZERO, Size::new(f32::INFINITY, limits.max().height));
+        let full = self
+            .full
+            .as_widget_mut()
+            .layout(&mut tree.children[1], renderer, &unbounded);
         let size = Size::new(width, short.size().height.max(full.size().height));
         layout::Node::with_children(size, vec![short, full])
     }
@@ -116,9 +131,20 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for Marquee<'_, M
         let full = children.next().expect("the whole text");
         let width = full.bounds().width;
         let state = tree.state.downcast_ref::<State>();
-        let rolling = state.hovered_since.is_some_and(|since| since.elapsed() > DELAY) && width > bounds.width + 1.0;
+        let rolling = state
+            .hovered_since
+            .is_some_and(|since| since.elapsed() > DELAY)
+            && width > bounds.width + 1.0;
         if !rolling {
-            self.short.as_widget().draw(&tree.children[0], renderer, theme, style, short, cursor, viewport);
+            self.short.as_widget().draw(
+                &tree.children[0],
+                renderer,
+                theme,
+                style,
+                short,
+                cursor,
+                viewport,
+            );
             return;
         }
         let since = state.hovered_since.expect("hovered");
@@ -129,7 +155,15 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for Marquee<'_, M
                 let x = copy - shift;
                 if x < bounds.width && x + width > 0.0 {
                     renderer.with_translation(Vector::new(x, 0.0), |renderer| {
-                        self.full.as_widget().draw(&tree.children[1], renderer, theme, style, full, cursor, viewport);
+                        self.full.as_widget().draw(
+                            &tree.children[1],
+                            renderer,
+                            theme,
+                            style,
+                            full,
+                            cursor,
+                            viewport,
+                        );
                     });
                 }
             }

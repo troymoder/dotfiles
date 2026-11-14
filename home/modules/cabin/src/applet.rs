@@ -20,7 +20,12 @@ use crate::{
 };
 
 /// The shadow under what's on the panel.
-const SHADOW: Color = Color { r: 0.0, g: 0.0, b: 0.0, a: 0.5 };
+const SHADOW: Color = Color {
+    r: 0.0,
+    g: 0.0,
+    b: 0.0,
+    a: 0.5,
+};
 
 /// Something drawn twice: its shadow a pixel lower, then itself. Only
 /// itself takes room, so the panel stays as thick as it was.
@@ -35,7 +40,10 @@ struct Shadowed<'a, M> {
 
 impl<M> iced::advanced::Widget<M, cosmic::Theme, cosmic::Renderer> for Shadowed<'_, M> {
     fn children(&self) -> Vec<iced::advanced::widget::Tree> {
-        vec![iced::advanced::widget::Tree::new(&self.top), iced::advanced::widget::Tree::new(&self.shadow)]
+        vec![
+            iced::advanced::widget::Tree::new(&self.top),
+            iced::advanced::widget::Tree::new(&self.shadow),
+        ]
     }
 
     fn diff(&mut self, tree: &mut iced::advanced::widget::Tree) {
@@ -46,9 +54,20 @@ impl<M> iced::advanced::Widget<M, cosmic::Theme, cosmic::Renderer> for Shadowed<
         self.top.as_widget().size()
     }
 
-    fn layout(&mut self, tree: &mut iced::advanced::widget::Tree, renderer: &cosmic::Renderer, limits: &iced::advanced::layout::Limits) -> iced::advanced::layout::Node {
-        let top = self.top.as_widget_mut().layout(&mut tree.children[0], renderer, limits);
-        let shadow = self.shadow.as_widget_mut().layout(&mut tree.children[1], renderer, limits);
+    fn layout(
+        &mut self,
+        tree: &mut iced::advanced::widget::Tree,
+        renderer: &cosmic::Renderer,
+        limits: &iced::advanced::layout::Limits,
+    ) -> iced::advanced::layout::Node {
+        let top = self
+            .top
+            .as_widget_mut()
+            .layout(&mut tree.children[0], renderer, limits);
+        let shadow = self
+            .shadow
+            .as_widget_mut()
+            .layout(&mut tree.children[1], renderer, limits);
         iced::advanced::layout::Node::with_children(top.size(), vec![top, shadow])
     }
 
@@ -68,9 +87,25 @@ impl<M> iced::advanced::Widget<M, cosmic::Theme, cosmic::Renderer> for Shadowed<
             return;
         };
         renderer.with_translation(iced::Vector::new(0.0, 1.0), |renderer| {
-            self.shadow.as_widget().draw(&tree.children[1], renderer, theme, style, shadow, cursor, viewport);
+            self.shadow.as_widget().draw(
+                &tree.children[1],
+                renderer,
+                theme,
+                style,
+                shadow,
+                cursor,
+                viewport,
+            );
         });
-        self.top.as_widget().draw(&tree.children[0], renderer, theme, style, top, cursor, viewport);
+        self.top.as_widget().draw(
+            &tree.children[0],
+            renderer,
+            theme,
+            style,
+            top,
+            cursor,
+            viewport,
+        );
     }
 }
 
@@ -79,15 +114,31 @@ fn bar_icon<'a, M: 'a>(name: &str, size: u16) -> Element<'a, M> {
 }
 
 fn tinted_bar_icon<'a, M: 'a>(name: &str, size: u16, color: Color) -> Element<'a, M> {
-    let shadow = widget::container(icon(name, size)).class(theme::Container::custom(|_| widget::container::Style { icon_color: Some(SHADOW), ..Default::default() }));
-    let top = widget::container(icon(name, size)).class(theme::Container::custom(move |_| widget::container::Style { icon_color: Some(color), ..Default::default() }));
+    let shadow = widget::container(icon(name, size)).class(theme::Container::custom(|_| {
+        widget::container::Style {
+            icon_color: Some(SHADOW),
+            ..Default::default()
+        }
+    }));
+    let top = widget::container(icon(name, size)).class(theme::Container::custom(move |_| {
+        widget::container::Style {
+            icon_color: Some(color),
+            ..Default::default()
+        }
+    }));
     shadowed(shadow.into(), top.into())
 }
 
 fn bar_text<'a, M: 'a>(content: String, size: f32, bold: bool) -> Element<'a, M> {
     let make = |color: Color| -> Element<'a, M> {
-        let t = if bold { text::sized_bold(content.clone(), size) } else { text::sized(content.clone(), size) };
-        t.wrapping(iced::widget::text::Wrapping::None).class(theme::Text::Color(color)).into()
+        let t = if bold {
+            text::sized_bold(content.clone(), size)
+        } else {
+            text::sized(content.clone(), size)
+        };
+        t.wrapping(iced::widget::text::Wrapping::None)
+            .class(theme::Text::Color(color))
+            .into()
     };
     shadowed(make(SHADOW), make(Color::WHITE))
 }
@@ -95,7 +146,11 @@ fn bar_text<'a, M: 'a>(content: String, size: f32, bold: bool) -> Element<'a, M>
 /// A panel button: a shade under the pointer, and while its panel is open.
 fn button_class(open: bool) -> theme::Button {
     let style = move |hovered: bool| widget::button::Style {
-        background: Some(Background::Color(if hovered || open { palette::alpha(Color::WHITE, 0.16) } else { Color::TRANSPARENT })),
+        background: Some(Background::Color(if hovered || open {
+            palette::alpha(Color::WHITE, 0.16)
+        } else {
+            Color::TRANSPARENT
+        })),
         text_color: Some(Color::WHITE),
         icon_color: Some(Color::WHITE),
         border_radius: 12.0.into(),
@@ -111,7 +166,11 @@ fn button_class(open: bool) -> theme::Button {
 
 fn padding(core: &app::Core) -> [u16; 2] {
     let (major, minor) = core.applet.suggested_padding(true);
-    if core.applet.is_horizontal() { [minor, major] } else { [major, minor] }
+    if core.applet.is_horizontal() {
+        [minor, major]
+    } else {
+        [major, minor]
+    }
 }
 
 /// A call to the daemon, as a task.
@@ -150,8 +209,15 @@ pub struct Status {
 }
 
 impl Status {
-    fn with_tooltip<'a>(&self, content: impl Into<Element<'a, Message>>, tip: String) -> Element<'a, Message> {
-        self.core.applet.applet_tooltip(content, tip, self.bar.open, Message::Surface, None).into()
+    fn with_tooltip<'a>(
+        &self,
+        content: impl Into<Element<'a, Message>>,
+        tip: String,
+    ) -> Element<'a, Message> {
+        self.core
+            .applet
+            .applet_tooltip(content, tip, self.bar.open, Message::Surface, None)
+            .into()
     }
 
     /// The pill while something watches or listens: amber, coral while the
@@ -166,9 +232,23 @@ impl Status {
             icons.push(icon("camera", size).into());
         }
         if pill.mic {
-            icons.push(icon(if pill.mic_muted { "microphone-off" } else { "microphone" }, size).into());
+            icons.push(
+                icon(
+                    if pill.mic_muted {
+                        "microphone-off"
+                    } else {
+                        "microphone"
+                    },
+                    size,
+                )
+                .into(),
+            );
         }
-        let (background, on) = if pill.screen { (palette::OVER, palette::ON_OVER) } else { (palette::AMBER, palette::ON_AMBER) };
+        let (background, on) = if pill.screen {
+            (palette::OVER, palette::ON_OVER)
+        } else {
+            (palette::AMBER, palette::ON_AMBER)
+        };
         let style = move |_: &cosmic::Theme| widget::button::Style {
             background: Some(Background::Color(background)),
             text_color: Some(on),
@@ -176,15 +256,19 @@ impl Status {
             border_radius: 12.0.into(),
             ..widget::button::Style::new()
         };
-        let button = widget::button::custom(widget::row::with_children(icons).spacing(7).align_y(Alignment::Center))
-            .padding([4, 10])
-            .class(theme::Button::Custom {
-                active: Box::new(move |_, t| style(t)),
-                disabled: Box::new(style),
-                hovered: Box::new(move |_, t| style(t)),
-                pressed: Box::new(move |_, t| style(t)),
-            })
-            .on_press(Message::Privacy);
+        let button = widget::button::custom(
+            widget::row::with_children(icons)
+                .spacing(7)
+                .align_y(Alignment::Center),
+        )
+        .padding([4, 10])
+        .class(theme::Button::Custom {
+            active: Box::new(move |_, t| style(t)),
+            disabled: Box::new(style),
+            hovered: Box::new(move |_, t| style(t)),
+            pressed: Box::new(move |_, t| style(t)),
+        })
+        .on_press(Message::Privacy);
         Some(self.with_tooltip(button, pill.tip.clone()))
     }
 
@@ -214,7 +298,13 @@ impl cosmic::Application for Status {
     const APP_ID: &'static str = crate::APP_ID;
 
     fn init(core: app::Core, _flags: ()) -> (Self, app::Task<Message>) {
-        (Self { core, bar: bus::StatusBar::default() }, text::load_font().map(|()| cosmic::action::app(Message::Done)))
+        (
+            Self {
+                core,
+                bar: bus::StatusBar::default(),
+            },
+            text::load_font().map(|()| cosmic::action::app(Message::Done)),
+        )
     }
 
     fn core(&self) -> &app::Core {
@@ -235,17 +325,32 @@ impl cosmic::Application for Status {
                 Ok(bar) => self.bar = bar,
                 Err(err) => tracing::warn!("cabind sent a status bar this can't read: {err}"),
             },
-            Message::Toggle => return ask("open the controls", |d| async move { d.toggle("controls").await }),
-            Message::Privacy => return ask("open the Privacy menu", |d| async move { d.open("controls", "privacy").await }),
+            Message::Toggle => {
+                return ask("open the controls", |d| async move {
+                    d.toggle("controls").await
+                });
+            }
+            Message::Privacy => {
+                return ask("open the Privacy menu", |d| async move {
+                    d.open("controls", "privacy").await
+                });
+            }
             Message::Scroll(delta) => {
                 // A notch of the wheel is a step; a touchpad's 30 px too.
                 let steps = match delta {
                     ScrollDelta::Lines { y, .. } => y as f64,
                     ScrollDelta::Pixels { y, .. } => y as f64 / 30.0,
                 };
-                return ask("set the volume", move |d| async move { d.volume(steps).await });
+                return ask(
+                    "set the volume",
+                    move |d| async move { d.volume(steps).await },
+                );
             }
-            Message::Surface(action) => return cosmic::task::message(cosmic::Action::Cosmic(cosmic::app::Action::Surface(action))),
+            Message::Surface(action) => {
+                return cosmic::task::message(cosmic::Action::Cosmic(cosmic::app::Action::Surface(
+                    action,
+                )));
+            }
             Message::Settings(page) => return Self::settings(page),
             Message::Tick | Message::Notification(_) | Message::Invoke(..) | Message::Done => {}
         }
@@ -253,28 +358,55 @@ impl cosmic::Application for Status {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        Subscription::batch([bus::bar("status").map(Message::Bar), bus::settings_requests().map(Message::Settings)])
+        Subscription::batch([
+            bus::bar("status").map(Message::Bar),
+            bus::settings_requests().map(Message::Settings),
+        ])
     }
 
     fn view(&self) -> Element<'_, Message> {
         let (size, _) = self.core.applet.suggested_size(true);
-        let mut items: Vec<Element<'_, Message>> = self.bar.icons.iter().map(|(name, tip)| self.with_tooltip(bar_icon(name, size), tip.clone())).collect();
+        let mut items: Vec<Element<'_, Message>> = self
+            .bar
+            .icons
+            .iter()
+            .map(|(name, tip)| self.with_tooltip(bar_icon(name, size), tip.clone()))
+            .collect();
         if let Some(level) = self.bar.headphones {
-            items.push(self.with_tooltip(bar_text(format!("{level} %"), 12.0, false), format!("Headphones battery {level} %")));
+            items.push(self.with_tooltip(
+                bar_text(format!("{level} %"), 12.0, false),
+                format!("Headphones battery {level} %"),
+            ));
         }
         if let Some((name, percent, tip)) = &self.bar.battery {
-            let color = if self.bar.battery_low { palette::LOW } else { Color::WHITE };
-            let shown = widget::row::with_children(vec![tinted_bar_icon(name, size, color), bar_text(format!("{percent:.0} %"), 12.0, false)]).spacing(6).align_y(Alignment::Center);
+            let color = if self.bar.battery_low {
+                palette::LOW
+            } else {
+                Color::WHITE
+            };
+            let shown = widget::row::with_children(vec![
+                tinted_bar_icon(name, size, color),
+                bar_text(format!("{percent:.0} %"), 12.0, false),
+            ])
+            .spacing(6)
+            .align_y(Alignment::Center);
             items.push(self.with_tooltip(shown, tip.clone()));
         }
         if items.is_empty() {
             // The daemon not answering yet: something to press all the same.
             items.push(bar_icon("settings", size));
         }
-        let row = widget::row::with_children(items).spacing(6).align_y(Alignment::Center);
-        let button = widget::button::custom(row).padding(padding(&self.core)).class(button_class(self.bar.open)).on_press(Message::Toggle);
+        let row = widget::row::with_children(items)
+            .spacing(6)
+            .align_y(Alignment::Center);
+        let button = widget::button::custom(row)
+            .padding(padding(&self.core))
+            .class(button_class(self.bar.open))
+            .on_press(Message::Toggle);
         let button = widget::mouse_area(button).on_scroll(Message::Scroll);
-        let mut bar = widget::row::with_capacity(2).spacing(4).align_y(Alignment::Center);
+        let mut bar = widget::row::with_capacity(2)
+            .spacing(4)
+            .align_y(Alignment::Center);
         if let Some(pill) = self.privacy_pill(size) {
             bar = bar.push(pill);
         }
@@ -298,7 +430,14 @@ impl cosmic::Application for Clock {
     const APP_ID: &'static str = crate::CLOCK_ID;
 
     fn init(core: app::Core, _flags: ()) -> (Self, app::Task<Message>) {
-        (Self { core, bar: bus::ClockBar::default(), now: Local::now() }, text::load_font().map(|()| cosmic::action::app(Message::Done)))
+        (
+            Self {
+                core,
+                bar: bus::ClockBar::default(),
+                now: Local::now(),
+            },
+            text::load_font().map(|()| cosmic::action::app(Message::Done)),
+        )
     }
 
     fn core(&self) -> &app::Core {
@@ -320,16 +459,27 @@ impl cosmic::Application for Clock {
                 Err(err) => tracing::warn!("cabind sent a clock bar this can't read: {err}"),
             },
             Message::Tick => self.now = Local::now(),
-            Message::Toggle => return ask("open the date menu", |d| async move { d.toggle("date").await }),
+            Message::Toggle => {
+                return ask(
+                    "open the date menu",
+                    |d| async move { d.toggle("date").await },
+                );
+            }
             // Notifications come to this button (the panel hands it the
             // daemon's socket); the daemon keeps and shows them.
             Message::Notification(notifications::Event::New(notification)) => {
                 let Ok(json) = serde_json::to_string(&notification) else {
                     return Task::none();
                 };
-                return ask("pass on a notification", move |d| async move { d.notified(&json).await });
+                return ask("pass on a notification", move |d| async move {
+                    d.notified(&json).await
+                });
             }
-            Message::Notification(notifications::Event::Closed(id)) => return ask("pass on a closed notification", move |d| async move { d.notification_closed(id).await }),
+            Message::Notification(notifications::Event::Closed(id)) => {
+                return ask("pass on a closed notification", move |d| async move {
+                    d.notification_closed(id).await
+                });
+            }
             Message::Notification(notifications::Event::Dismissed) => {}
             Message::Invoke(id, key) => {
                 return Task::future(async move {
@@ -337,7 +487,11 @@ impl cosmic::Application for Clock {
                     cosmic::action::app(Message::Done)
                 });
             }
-            Message::Privacy | Message::Scroll(_) | Message::Surface(_) | Message::Settings(_) | Message::Done => {}
+            Message::Privacy
+            | Message::Scroll(_)
+            | Message::Surface(_)
+            | Message::Settings(_)
+            | Message::Done => {}
         }
         Task::none()
     }
@@ -365,16 +519,32 @@ impl cosmic::Application for Clock {
                 .height(Length::Fixed(6.0))
                 .class(theme::Container::custom(|_| widget::container::Style {
                     background: Some(Background::Color(palette::KNOB)),
-                    border: iced::Border { radius: 3.0.into(), width: 1.5, color: Color { a: 0.35, ..Color::BLACK } },
+                    border: iced::Border {
+                        radius: 3.0.into(),
+                        width: 1.5,
+                        color: Color {
+                            a: 0.35,
+                            ..Color::BLACK
+                        },
+                    },
                     ..Default::default()
                 }))
                 .into()
         } else {
             widget::space::horizontal().width(Length::Fixed(1.0)).into()
         };
-        let mark = widget::container(mark).width(Length::Fixed(14.0)).align_x(Alignment::Center);
-        let row = widget::row::with_capacity(2).spacing(6).align_y(Alignment::Center).push(label).push(mark);
-        let button = widget::button::custom(row).padding(padding(&self.core)).class(button_class(self.bar.open)).on_press(Message::Toggle);
+        let mark = widget::container(mark)
+            .width(Length::Fixed(14.0))
+            .align_x(Alignment::Center);
+        let row = widget::row::with_capacity(2)
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .push(label)
+            .push(mark);
+        let button = widget::button::custom(row)
+            .padding(padding(&self.core))
+            .class(button_class(self.bar.open))
+            .on_press(Message::Toggle);
         widget::autosize::autosize(button, widget::Id::new("cabin-clock")).into()
     }
 }
@@ -391,14 +561,21 @@ fn mini_bar<'a>(fraction: f32) -> Element<'a, Message> {
     let filled = (fraction.clamp(0.0, 1.0) * 100.0).round() as u16;
     let mut parts: Vec<Element<'a, Message>> = Vec::new();
     if filled < 100 {
-        parts.push(widget::space::vertical().height(Length::FillPortion(100 - filled)).into());
+        parts.push(
+            widget::space::vertical()
+                .height(Length::FillPortion(100 - filled))
+                .into(),
+        );
     }
     if filled > 0 {
         parts.push(
             widget::container(widget::space::horizontal())
                 .width(Length::Fill)
                 .height(Length::FillPortion(filled))
-                .class(theme::Container::custom(|_| widget::container::Style { background: Some(Background::Color(Color::WHITE)), ..Default::default() }))
+                .class(theme::Container::custom(|_| widget::container::Style {
+                    background: Some(Background::Color(Color::WHITE)),
+                    ..Default::default()
+                }))
                 .into(),
         );
     }
@@ -407,8 +584,15 @@ fn mini_bar<'a>(fraction: f32) -> Element<'a, Message> {
         .height(Length::Fixed(14.0))
         .class(theme::Container::custom(|_| widget::container::Style {
             background: Some(Background::Color(palette::alpha(Color::WHITE, 0.25))),
-            border: iced::Border { radius: 2.0.into(), ..Default::default() },
-            shadow: iced::Shadow { color: palette::alpha(Color::BLACK, 0.4), offset: iced::Vector::new(0.0, 1.0), blur_radius: 2.0 },
+            border: iced::Border {
+                radius: 2.0.into(),
+                ..Default::default()
+            },
+            shadow: iced::Shadow {
+                color: palette::alpha(Color::BLACK, 0.4),
+                offset: iced::Vector::new(0.0, 1.0),
+                blur_radius: 2.0,
+            },
             ..Default::default()
         }))
         .into()
@@ -421,7 +605,13 @@ impl cosmic::Application for System {
     const APP_ID: &'static str = crate::SYSTEM_ID;
 
     fn init(core: app::Core, _flags: ()) -> (Self, app::Task<Message>) {
-        (Self { core, bar: bus::SystemBar::default() }, text::load_font().map(|()| cosmic::action::app(Message::Done)))
+        (
+            Self {
+                core,
+                bar: bus::SystemBar::default(),
+            },
+            text::load_font().map(|()| cosmic::action::app(Message::Done)),
+        )
     }
 
     fn core(&self) -> &app::Core {
@@ -442,8 +632,16 @@ impl cosmic::Application for System {
                 Ok(bar) => self.bar = bar,
                 Err(err) => tracing::warn!("cabind sent a System bar this can't read: {err}"),
             },
-            Message::Toggle => return ask("open the System panel", |d| async move { d.toggle("system").await }),
-            Message::Surface(action) => return cosmic::task::message(cosmic::Action::Cosmic(cosmic::app::Action::Surface(action))),
+            Message::Toggle => {
+                return ask("open the System panel", |d| async move {
+                    d.toggle("system").await
+                });
+            }
+            Message::Surface(action) => {
+                return cosmic::task::message(cosmic::Action::Cosmic(cosmic::app::Action::Surface(
+                    action,
+                )));
+            }
             _ => {}
         }
         Task::none()
@@ -455,11 +653,29 @@ impl cosmic::Application for System {
 
     fn view(&self) -> Element<'_, Message> {
         // Wide enough for "100 %", so the bars don't shift as it changes.
-        let label = widget::container(bar_text(self.bar.label.clone(), 12.0, false)).width(Length::Fixed(40.0)).align_x(Alignment::End);
-        let row = widget::row::with_children(vec![mini_bar(self.bar.cpu), mini_bar(self.bar.memory), label.into()]).spacing(4).align_y(Alignment::Center);
-        let button = widget::button::custom(row).padding(padding(&self.core)).class(button_class(self.bar.open)).on_press(Message::Toggle);
-        let tip = if self.bar.tip.is_empty() { "System".to_owned() } else { self.bar.tip.clone() };
-        let button = self.core.applet.applet_tooltip(button, tip, self.bar.open, Message::Surface, None);
+        let label = widget::container(bar_text(self.bar.label.clone(), 12.0, false))
+            .width(Length::Fixed(40.0))
+            .align_x(Alignment::End);
+        let row = widget::row::with_children(vec![
+            mini_bar(self.bar.cpu),
+            mini_bar(self.bar.memory),
+            label.into(),
+        ])
+        .spacing(4)
+        .align_y(Alignment::Center);
+        let button = widget::button::custom(row)
+            .padding(padding(&self.core))
+            .class(button_class(self.bar.open))
+            .on_press(Message::Toggle);
+        let tip = if self.bar.tip.is_empty() {
+            "System".to_owned()
+        } else {
+            self.bar.tip.clone()
+        };
+        let button =
+            self.core
+                .applet
+                .applet_tooltip(button, tip, self.bar.open, Message::Surface, None);
         widget::autosize::autosize(button, widget::Id::new("cabin-system")).into()
     }
 }

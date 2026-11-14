@@ -10,6 +10,8 @@
   pulseaudio,
   curl,
   pciutils,
+  ffmpeg,
+  wl-clipboard,
   cantarell-fonts,
   fetchFromGitHub,
 }: let
@@ -45,9 +47,11 @@ in
 
     TABLER_ICONS_DIR = "${tabler-icons}/icons/outline";
 
-    # It shells out to these for sound and cover art.
+    # It shells out to these for sound and cover art, and cabin-capture to
+    # ffmpeg (recordings, with PulseAudio for their sound; the headless one
+    # has none), pw-cli/pw-link (an app's sound) and wl-copy (screenshots).
     preFixup = ''
-      libcosmicAppWrapperArgs+=(--prefix PATH : ${lib.makeBinPath [pipewire wireplumber pulseaudio curl pciutils]})
+      libcosmicAppWrapperArgs+=(--prefix PATH : ${lib.makeBinPath [pipewire wireplumber pulseaudio curl pciutils ffmpeg wl-clipboard]})
       libcosmicAppWrapperArgs+=(--set QS_FONT_DIR ${cantarell-fonts}/share/fonts)
     '';
 

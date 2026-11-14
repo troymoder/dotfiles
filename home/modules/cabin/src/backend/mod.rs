@@ -9,8 +9,8 @@ pub mod audio;
 pub mod bluetooth;
 pub mod brightness;
 pub mod camera;
-pub mod dnd;
 pub mod display;
+pub mod dnd;
 pub mod dns;
 pub mod ec;
 pub mod gpu;
@@ -30,6 +30,7 @@ pub mod session;
 pub mod system;
 pub mod toplevels;
 pub mod weather;
+pub mod windows;
 
 use std::{pin::Pin, time::Duration};
 
@@ -47,38 +48,45 @@ where
     R: Fn() -> F + Send + 'static,
     F: Future<Output = Option<T>> + Send,
 {
-    stream::channel(4, move |mut out: futures::channel::mpsc::Sender<T>| async move {
-        let mut last: Option<T> = None;
-        let mut changes = changes();
-        loop {
-            if let Some(value) = read().await {
-                if last.as_ref() != Some(&value) {
-                    last = Some(value.clone());
-                    if out.send(value).await.is_err() {
-                        return;
+    stream::channel(
+        4,
+        move |mut out: futures::channel::mpsc::Sender<T>| async move {
+            let mut last: Option<T> = None;
+            let mut changes = changes();
+            loop {
+                if let Some(value) = read().await {
+                    if last.as_ref() != Some(&value) {
+                        last = Some(value.clone());
+                        if out.send(value).await.is_err() {
+                            return;
+                        }
                     }
                 }
-            }
-            tokio::select! {
-                change = changes.next() => {
-                    if change.is_none() {
-                        // The source is gone: look again now and then.
-                        changes = no_changes();
+                tokio::select! {
+                    change = changes.next() => {
+                        if change.is_none() {
+                            // The source is gone: look again now and then.
+                            changes = no_changes();
+                        }
+                        // Let a burst of changes settle.
+                        tokio::time::sleep(Duration::from_millis(150)).await;
                     }
-                    // Let a burst of changes settle.
-                    tokio::time::sleep(Duration::from_millis(150)).await;
+                    _ = tokio::time::sleep(every) => {}
                 }
-                _ = tokio::time::sleep(every) => {}
             }
-        }
-    })
+        },
+    )
 }
 
 /// Signals on the system or the session bus matching the rules, as a stream
 /// of nothing in particular: just that something changed.
 pub fn bus_changes(system: bool, rules: fn() -> Vec<zbus::MatchRule<'static>>) -> Changes {
     async move {
-        let conn = if system { zbus::Connection::system().await } else { zbus::Connection::session().await };
+        let conn = if system {
+            zbus::Connection::system().await
+        } else {
+            zbus::Connection::session().await
+        };
         let Ok(conn) = conn else {
             return no_changes();
         };
@@ -101,7 +109,12 @@ pub fn no_changes() -> Changes {
 }
 
 /// A rule for one kind of signal, from a sender or at a path.
-pub fn signal(sender: Option<&'static str>, path: Option<&'static str>, interface: Option<&'static str>, member: Option<&'static str>) -> Option<zbus::MatchRule<'static>> {
+pub fn signal(
+    sender: Option<&'static str>,
+    path: Option<&'static str>,
+    interface: Option<&'static str>,
+    member: Option<&'static str>,
+) -> Option<zbus::MatchRule<'static>> {
     let mut rule = zbus::MatchRule::builder().msg_type(zbus::message::Type::Signal);
     if let Some(sender) = sender {
         rule = rule.sender(sender).ok()?;
@@ -123,7 +136,10 @@ pub fn spawn(program: &str, args: &[&str], env: &[(&str, &str)]) {
     let mut command = std::process::Command::new(program);
     // Our own library path (the dev loop's, or the wrapper's) is ours alone:
     // another COSMIC program with it crashes in wgpu.
-    command.env_remove("LD_LIBRARY_PATH").envs(env.iter().copied()).args(args);
+    command
+        .env_remove("LD_LIBRARY_PATH")
+        .envs(env.iter().copied())
+        .args(args);
     match command.spawn() {
         Ok(mut child) => {
             std::thread::spawn(move || child.wait());

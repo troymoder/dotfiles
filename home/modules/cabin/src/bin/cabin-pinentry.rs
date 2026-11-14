@@ -12,22 +12,25 @@ use std::{
     sync::{Mutex, OnceLock, mpsc},
 };
 
+use cabin::ui::{glass, icon, palette, text};
 use cosmic::{
     Element, app,
     iced::{
         self, Alignment, Background, Color, Length, Limits, Subscription, event,
-        platform_specific::shell::commands::layer_surface::{Anchor, KeyboardInteractivity, destroy_layer_surface, get_layer_surface},
+        platform_specific::shell::commands::layer_surface::{
+            Anchor, KeyboardInteractivity, destroy_layer_surface, get_layer_surface,
+        },
         runtime::platform_specific::wayland::layer_surface::SctkLayerSurfaceSettings,
         window,
     },
     theme, widget,
 };
 use futures::{SinkExt, StreamExt};
-use cabin::ui::{glass, icon, palette, text};
 
 const WIDTH: f32 = 520.0;
 
-static INPUT: std::sync::LazyLock<widget::Id> = std::sync::LazyLock::new(|| widget::Id::new("pinentry-input"));
+static INPUT: std::sync::LazyLock<widget::Id> =
+    std::sync::LazyLock::new(|| widget::Id::new("pinentry-input"));
 
 /// What gpg-agent asks: a passphrase, a yes or no, or just to be read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -69,7 +72,8 @@ enum Event {
     Quit,
 }
 
-static EVENTS: OnceLock<Mutex<Option<futures::channel::mpsc::UnboundedReceiver<Event>>>> = OnceLock::new();
+static EVENTS: OnceLock<Mutex<Option<futures::channel::mpsc::UnboundedReceiver<Event>>>> =
+    OnceLock::new();
 
 // ---- the Assuan side
 
@@ -79,7 +83,9 @@ fn percent_decode(s: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(value) = u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""), 16) {
+            if let Ok(value) =
+                u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""), 16)
+            {
                 out.push(value);
                 i += 3;
                 continue;
@@ -119,18 +125,50 @@ fn serve(mut to_window: futures::channel::mpsc::UnboundedSender<Event>) {
         let _ = stdout.flush();
     };
     say("OK Pleased to meet you");
-    let (mut title, mut description, mut prompt, mut error, mut ok, mut cancel) = (String::new(), String::new(), String::new(), String::new(), String::new(), String::new());
+    let (mut title, mut description, mut prompt, mut error, mut ok, mut cancel) = (
+        String::new(),
+        String::new(),
+        String::new(),
+        String::new(),
+        String::new(),
+        String::new(),
+    );
     let (mut not_ok, mut repeat): (Option<String>, Option<String>) = (None, None);
-    let mut ask = |kind: Kind, title: &str, description: &str, prompt: &str, error: &str, ok: &str, cancel: &str, not_ok: &Option<String>, repeat: &Option<String>| -> Option<Reply> {
+    let mut ask = |kind: Kind,
+                   title: &str,
+                   description: &str,
+                   prompt: &str,
+                   error: &str,
+                   ok: &str,
+                   cancel: &str,
+                   not_ok: &Option<String>,
+                   repeat: &Option<String>|
+     -> Option<Reply> {
         let (reply_tx, reply_rx) = mpsc::channel();
         let request = Request {
             kind,
-            title: if title.is_empty() { "Passphrase".to_owned() } else { title.to_owned() },
+            title: if title.is_empty() {
+                "Passphrase".to_owned()
+            } else {
+                title.to_owned()
+            },
             description: description.to_owned(),
-            prompt: if prompt.is_empty() { "Passphrase".to_owned() } else { prompt.to_owned() },
+            prompt: if prompt.is_empty() {
+                "Passphrase".to_owned()
+            } else {
+                prompt.to_owned()
+            },
             error: error.to_owned(),
-            ok: if ok.is_empty() { "OK".to_owned() } else { label(ok) },
-            cancel: if cancel.is_empty() { "Cancel".to_owned() } else { label(cancel) },
+            ok: if ok.is_empty() {
+                "OK".to_owned()
+            } else {
+                label(ok)
+            },
+            cancel: if cancel.is_empty() {
+                "Cancel".to_owned()
+            } else {
+                label(cancel)
+            },
             not_ok: not_ok.as_deref().map(label),
             repeat: repeat.clone(),
             reply: reply_tx,
@@ -147,7 +185,8 @@ fn serve(mut to_window: futures::channel::mpsc::UnboundedSender<Event>) {
         };
         let argument = percent_decode(argument);
         match command.as_str() {
-            "" | "NOP" | "OPTION" | "SETTIMEOUT" | "SETQUALITYBAR" | "SETQUALITYBAR_TT" | "SETGENPIN" | "SETGENPIN_TT" | "SETKEYINFO" | "CLEARPASSPHRASE" => say("OK"),
+            "" | "NOP" | "OPTION" | "SETTIMEOUT" | "SETQUALITYBAR" | "SETQUALITYBAR_TT"
+            | "SETGENPIN" | "SETGENPIN_TT" | "SETKEYINFO" | "CLEARPASSPHRASE" => say("OK"),
             "RESET" => {
                 title.clear();
                 description.clear();
@@ -188,7 +227,11 @@ fn serve(mut to_window: futures::channel::mpsc::UnboundedSender<Event>) {
                 say("OK");
             }
             "SETREPEAT" => {
-                repeat = Some(if argument.is_empty() { "Repeat".to_owned() } else { argument });
+                repeat = Some(if argument.is_empty() {
+                    "Repeat".to_owned()
+                } else {
+                    argument
+                });
                 say("OK");
             }
             "SETREPEATERROR" => say("OK"),
@@ -203,7 +246,17 @@ fn serve(mut to_window: futures::channel::mpsc::UnboundedSender<Event>) {
                 say("OK");
             }
             "GETPIN" => {
-                match ask(Kind::Pin, &title, &description, &prompt, &error, &ok, &cancel, &not_ok, &repeat) {
+                match ask(
+                    Kind::Pin,
+                    &title,
+                    &description,
+                    &prompt,
+                    &error,
+                    &ok,
+                    &cancel,
+                    &not_ok,
+                    &repeat,
+                ) {
                     Some(Reply::Pin(pin)) => {
                         if repeat.is_some() {
                             say("S PIN_REPEATED");
@@ -216,13 +269,33 @@ fn serve(mut to_window: futures::channel::mpsc::UnboundedSender<Event>) {
                 error.clear();
                 repeat = None;
             }
-            "CONFIRM" => match ask(Kind::Confirm, &title, &description, &prompt, &error, &ok, &cancel, &not_ok, &None) {
+            "CONFIRM" => match ask(
+                Kind::Confirm,
+                &title,
+                &description,
+                &prompt,
+                &error,
+                &ok,
+                &cancel,
+                &not_ok,
+                &None,
+            ) {
                 Some(Reply::Confirmed) => say("OK"),
                 Some(Reply::NotConfirmed) => say("ERR 83886194 Not confirmed <Pinentry>"),
                 _ => say("ERR 83886179 Operation cancelled <Pinentry>"),
             },
             "MESSAGE" => {
-                let _ = ask(Kind::Message, &title, &description, &prompt, &error, &ok, &cancel, &None, &None);
+                let _ = ask(
+                    Kind::Message,
+                    &title,
+                    &description,
+                    &prompt,
+                    &error,
+                    &ok,
+                    &cancel,
+                    &None,
+                    &None,
+                );
                 say("OK");
             }
             "HELP" => say("OK"),
@@ -293,14 +366,30 @@ impl cosmic::Application for Pinentry {
     fn init(mut core: app::Core, _: ()) -> (Self, app::Task<Message>) {
         core.set_app_type(cosmic::core::AppType::System);
         let font = match text::file().and_then(|path| std::fs::read(path).ok()) {
-            Some(bytes) => iced::font::load(std::borrow::Cow::Owned(bytes)).map(|_| cosmic::action::app(Message::Done)),
+            Some(bytes) => iced::font::load(std::borrow::Cow::Owned(bytes))
+                .map(|_| cosmic::action::app(Message::Done)),
             None => app::Task::none(),
         };
-        (Self { core, surface: None, request: None, pin: String::new(), again: String::new(), shown: false, mismatch: false }, font)
+        (
+            Self {
+                core,
+                surface: None,
+                request: None,
+                pin: String::new(),
+                again: String::new(),
+                shown: false,
+                mismatch: false,
+            },
+            font,
+        )
     }
 
     fn style(&self) -> Option<iced::theme::Style> {
-        Some(iced::theme::Style { background_color: Color::TRANSPARENT, text_color: palette::TEXT, icon_color: palette::TEXT })
+        Some(iced::theme::Style {
+            background_color: Color::TRANSPARENT,
+            text_color: palette::TEXT,
+            icon_color: palette::TEXT,
+        })
     }
 
     fn update(&mut self, message: Message) -> app::Task<Message> {
@@ -338,7 +427,9 @@ impl cosmic::Application for Pinentry {
             }
             Message::Submit => match self.request.as_ref().map(|r| r.kind) {
                 Some(Kind::Pin) => {
-                    if self.request.as_ref().is_some_and(|r| r.repeat.is_some()) && self.again != self.pin {
+                    if self.request.as_ref().is_some_and(|r| r.repeat.is_some())
+                        && self.again != self.pin
+                    {
                         self.mismatch = true;
                         return app::Task::none();
                     }
@@ -361,15 +452,32 @@ impl cosmic::Application for Pinentry {
         let (Some(request), true) = (&self.request, self.surface == Some(id)) else {
             return widget::text("").into();
         };
-        let chip = widget::container(icon(if request.kind == Kind::Pin { "key" } else { "info-circle" }, 26)).center(Length::Fixed(52.0)).class(theme::Container::custom(|_| widget::container::Style {
+        let chip = widget::container(icon(
+            if request.kind == Kind::Pin {
+                "key"
+            } else {
+                "info-circle"
+            },
+            26,
+        ))
+        .center(Length::Fixed(52.0))
+        .class(theme::Container::custom(|_| widget::container::Style {
             background: Some(Background::Color(palette::ACCENT)),
             icon_color: Some(palette::ON_ACCENT),
-            border: iced::Border { radius: 14.0.into(), ..Default::default() },
+            border: iced::Border {
+                radius: 14.0.into(),
+                ..Default::default()
+            },
             ..Default::default()
         }));
-        let mut words = widget::column::with_capacity(4).spacing(6).push(text::sized_bold(request.title.clone(), 20.0));
+        let mut words = widget::column::with_capacity(4)
+            .spacing(6)
+            .push(text::sized_bold(request.title.clone(), 20.0));
         if !request.description.is_empty() {
-            words = words.push(text::sized(request.description.clone(), 13.5).class(theme::Text::Color(palette::rgba(232, 236, 246, 0.78))));
+            words = words.push(
+                text::sized(request.description.clone(), 13.5)
+                    .class(theme::Text::Color(palette::rgba(232, 236, 246, 0.78))),
+            );
         }
         let warning = if self.mismatch {
             Some("The two passphrases differ.".to_owned())
@@ -381,21 +489,43 @@ impl cosmic::Application for Pinentry {
         if let Some(warning) = warning {
             words = words.push(text::sized(warning, 13.0).class(theme::Text::Color(palette::OVER)));
         }
-        let mut body = widget::column::with_capacity(3).spacing(14).push(widget::row::with_children(vec![chip.into(), words.width(Length::Fill).into()]).spacing(18).align_y(Alignment::Start));
+        let mut body = widget::column::with_capacity(3).spacing(14).push(
+            widget::row::with_children(vec![chip.into(), words.width(Length::Fill).into()])
+                .spacing(18)
+                .align_y(Alignment::Start),
+        );
         if request.kind == Kind::Pin {
-            let field = widget::secure_input(request.prompt.clone(), self.pin.clone(), Some(Message::ToggleShown), !self.shown)
-                .id(INPUT.clone())
-                .on_input(Message::Typed)
-                .on_submit(|_| Message::Submit);
+            let field = widget::secure_input(
+                request.prompt.clone(),
+                self.pin.clone(),
+                Some(Message::ToggleShown),
+                !self.shown,
+            )
+            .id(INPUT.clone())
+            .on_input(Message::Typed)
+            .on_submit(|_| Message::Submit);
             body = body.push(widget::container(field).padding([0, 0, 0, 70]));
             if let Some(repeat) = &request.repeat {
-                let again = widget::secure_input(repeat.clone(), self.again.clone(), None::<Message>, !self.shown).on_input(Message::TypedAgain).on_submit(|_| Message::Submit);
+                let again = widget::secure_input(
+                    repeat.clone(),
+                    self.again.clone(),
+                    None::<Message>,
+                    !self.shown,
+                )
+                .on_input(Message::TypedAgain)
+                .on_submit(|_| Message::Submit);
                 body = body.push(widget::container(again).padding([0, 0, 0, 70]));
             }
         }
-        let mut buttons = widget::row::with_capacity(4).spacing(10).push(widget::space::horizontal());
+        let mut buttons = widget::row::with_capacity(4)
+            .spacing(10)
+            .push(widget::space::horizontal());
         if request.kind != Kind::Message {
-            buttons = buttons.push(dialog_button(request.cancel.clone(), false, Message::Cancel));
+            buttons = buttons.push(dialog_button(
+                request.cancel.clone(),
+                false,
+                Message::Cancel,
+            ));
         }
         if let (Kind::Confirm, Some(not_ok)) = (request.kind, &request.not_ok) {
             buttons = buttons.push(dialog_button(not_ok.clone(), false, Message::NotOk));
@@ -404,13 +534,22 @@ impl cosmic::Application for Pinentry {
         body = body.push(widget::container(buttons).padding([8, 0, 0, 0]));
         let card = glass(body, [26.0, 26.0, 20.0, 26.0], Some(WIDTH));
         cosmic::iced::widget::stack([
-            widget::mouse_area(widget::container(widget::space::horizontal()).width(Length::Fill).height(Length::Fill).class(theme::Container::custom(|_| widget::container::Style {
-                background: Some(Background::Color(palette::rgba(5, 8, 18, 0.45))),
-                ..Default::default()
-            })))
+            widget::mouse_area(
+                widget::container(widget::space::horizontal())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .class(theme::Container::custom(|_| widget::container::Style {
+                        background: Some(Background::Color(palette::rgba(5, 8, 18, 0.45))),
+                        ..Default::default()
+                    })),
+            )
             .on_press(Message::Cancel)
             .into(),
-            widget::container(widget::mouse_area(card).on_press(Message::Done)).width(Length::Fill).align_x(Alignment::Center).padding([240, 0, 0, 0]).into(),
+            widget::container(widget::mouse_area(card).on_press(Message::Done))
+                .width(Length::Fill)
+                .align_x(Alignment::Center)
+                .padding([240, 0, 0, 0])
+                .into(),
         ])
         .width(Length::Fill)
         .height(Length::Fill)
@@ -421,7 +560,10 @@ impl cosmic::Application for Pinentry {
         Subscription::batch([
             Subscription::run(events).map(Message::Event),
             event::listen_with(|event, _, _| match event {
-                iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape), .. }) => Some(Message::Cancel),
+                iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                    key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+                    ..
+                }) => Some(Message::Cancel),
                 _ => None,
             }),
         ])
@@ -443,7 +585,11 @@ fn dialog_button<'a>(label: String, primary: bool, message: Message) -> Element<
             (false, true) => palette::rgba(200, 220, 255, 0.2),
             (false, false) => palette::rgba(200, 220, 255, 0.12),
         })),
-        text_color: Some(if primary { palette::ON_ACCENT } else { palette::TEXT }),
+        text_color: Some(if primary {
+            palette::ON_ACCENT
+        } else {
+            palette::TEXT
+        }),
         border_radius: 12.0.into(),
         ..widget::button::Style::new()
     };
@@ -463,8 +609,16 @@ fn main() -> iced::Result {
     cabin::prefer_integrated_gpu();
     let (to_window, from_assuan) = futures::channel::mpsc::unbounded();
     let _ = EVENTS.set(Mutex::new(Some(from_assuan)));
-    std::thread::Builder::new().name("assuan".into()).spawn(move || serve(to_window)).expect("a thread");
-    cosmic::app::run::<Pinentry>(app::Settings::default().no_main_window(true).exit_on_close(false), ())
+    std::thread::Builder::new()
+        .name("assuan".into())
+        .spawn(move || serve(to_window))
+        .expect("a thread");
+    cosmic::app::run::<Pinentry>(
+        app::Settings::default()
+            .no_main_window(true)
+            .exit_on_close(false),
+        (),
+    )
 }
 
 #[cfg(test)]

@@ -17,7 +17,12 @@ struct State<T> {
 
 impl<T: Clone + Send + 'static> Latest<T> {
     pub const fn new() -> Self {
-        Self { state: Mutex::new(State { busy: false, pending: None }) }
+        Self {
+            state: Mutex::new(State {
+                busy: false,
+                pending: None,
+            }),
+        }
     }
 
     /// `value` set with `set`, now or once the one being set is done.

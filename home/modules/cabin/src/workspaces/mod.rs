@@ -23,7 +23,9 @@ use cosmic::{
             globals::{GlobalList, registry_queue_init},
             protocol::wl_output::WlOutput,
         },
-        wayland_protocols::ext::workspace::v1::client::ext_workspace_handle_v1::{ExtWorkspaceHandleV1, State as WorkspaceFlags},
+        wayland_protocols::ext::workspace::v1::client::ext_workspace_handle_v1::{
+            ExtWorkspaceHandleV1, State as WorkspaceFlags,
+        },
         workspace::{Workspace, WorkspaceHandler, WorkspaceState},
     },
     iced::{self, Alignment, Background, Length, Subscription, mouse::ScrollDelta, stream},
@@ -76,7 +78,9 @@ pub struct WorkspacesApp {
 
 impl WorkspacesApp {
     fn active(&self) -> Option<usize> {
-        self.workspaces.iter().position(|w| w.state.contains(WorkspaceFlags::Active))
+        self.workspaces
+            .iter()
+            .position(|w| w.state.contains(WorkspaceFlags::Active))
     }
 
     /// Moves `by` workspaces on (back when negative), stopping at the ends.
@@ -102,15 +106,24 @@ fn dot<'a>(active: bool, horizontal: bool) -> Element<'a, Message> {
         (true, false) => (DOT, PILL),
         (false, _) => (DOT, DOT),
     };
-    let color = if active { iced::Color::WHITE } else { palette::alpha(iced::Color::WHITE, 0.55) };
+    let color = if active {
+        iced::Color::WHITE
+    } else {
+        palette::alpha(iced::Color::WHITE, 0.55)
+    };
     let radius = if active { 4.0 } else { DOT / 2.0 };
     widget::container(widget::space::horizontal())
         .width(Length::Fixed(width))
         .height(Length::Fixed(height))
-        .class(theme::Container::custom(move |_| widget::container::Style {
-            background: Some(Background::Color(color)),
-            border: iced::Border { radius: radius.into(), ..Default::default() },
-            ..Default::default()
+        .class(theme::Container::custom(move |_| {
+            widget::container::Style {
+                background: Some(Background::Color(color)),
+                border: iced::Border {
+                    radius: radius.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
         }))
         .into()
 }
@@ -118,7 +131,11 @@ fn dot<'a>(active: bool, horizontal: bool) -> Element<'a, Message> {
 fn hover_style() -> theme::Button {
     fn style(hovered: bool) -> widget::button::Style {
         widget::button::Style {
-            background: Some(Background::Color(if hovered { palette::alpha(iced::Color::WHITE, 0.16) } else { iced::Color::TRANSPARENT })),
+            background: Some(Background::Color(if hovered {
+                palette::alpha(iced::Color::WHITE, 0.16)
+            } else {
+                iced::Color::TRANSPARENT
+            })),
             border_radius: 12.0.into(),
             ..widget::button::Style::new()
         }
@@ -138,7 +155,16 @@ impl cosmic::Application for WorkspacesApp {
     const APP_ID: &'static str = crate::WORKSPACES_ID;
 
     fn init(core: app::Core, _flags: ()) -> (Self, app::Task<Message>) {
-        (Self { core, workspaces: Vec::new(), commands: None, scrolled: 0.0, pending: None }, Task::none())
+        (
+            Self {
+                core,
+                workspaces: Vec::new(),
+                commands: None,
+                scrolled: 0.0,
+                pending: None,
+            },
+            Task::none(),
+        )
     }
 
     fn core(&self) -> &app::Core {
@@ -162,7 +188,9 @@ impl cosmic::Application for WorkspacesApp {
                 self.workspaces = list;
                 self.pending = None;
             }
-            Message::Wayland(Event::Unavailable) => tracing::warn!("no workspace protocol; the applet stays empty"),
+            Message::Wayland(Event::Unavailable) => {
+                tracing::warn!("no workspace protocol; the applet stays empty")
+            }
             Message::Open => {
                 return Task::future(async {
                     backend::session::overview().await;
@@ -195,14 +223,31 @@ impl cosmic::Application for WorkspacesApp {
         let applet = &self.core.applet;
         let horizontal = applet.is_horizontal();
         let (major, minor) = applet.suggested_padding(true);
-        let dots: Vec<Element<'_, Message>> = self.workspaces.iter().map(|w| dot(w.state.contains(WorkspaceFlags::Active), horizontal)).collect();
+        let dots: Vec<Element<'_, Message>> = self
+            .workspaces
+            .iter()
+            .map(|w| dot(w.state.contains(WorkspaceFlags::Active), horizontal))
+            .collect();
         let content: Element<'_, Message> = if horizontal {
-            widget::row::with_children(dots).spacing(GAP).align_y(Alignment::Center).into()
+            widget::row::with_children(dots)
+                .spacing(GAP)
+                .align_y(Alignment::Center)
+                .into()
         } else {
-            widget::column::with_children(dots).spacing(GAP).align_x(Alignment::Center).into()
+            widget::column::with_children(dots)
+                .spacing(GAP)
+                .align_x(Alignment::Center)
+                .into()
         };
-        let padding = if horizontal { [minor, major] } else { [major, minor] };
-        let button = widget::button::custom(content).padding(padding).class(hover_style()).on_press(Message::Open);
+        let padding = if horizontal {
+            [minor, major]
+        } else {
+            [major, minor]
+        };
+        let button = widget::button::custom(content)
+            .padding(padding)
+            .class(hover_style())
+            .on_press(Message::Open);
         let area = widget::mouse_area(button).on_scroll(Message::Scroll);
         widget::autosize::autosize(area, widget::Id::new("cabin-workspaces")).into()
     }
@@ -236,8 +281,12 @@ pub fn subscription() -> Subscription<Event> {
 type Registry = (Connection, GlobalList, EventQueue<State>);
 
 fn registry(connection: Result<Connection, ConnectError>) -> Option<Registry> {
-    let connection = connection.inspect_err(|err| tracing::warn!("workspaces: no wayland connection: {err}")).ok()?;
-    let (globals, queue) = registry_queue_init::<State>(&connection).inspect_err(|err| tracing::warn!("workspaces: no registry: {err}")).ok()?;
+    let connection = connection
+        .inspect_err(|err| tracing::warn!("workspaces: no wayland connection: {err}"))
+        .ok()?;
+    let (globals, queue) = registry_queue_init::<State>(&connection)
+        .inspect_err(|err| tracing::warn!("workspaces: no registry: {err}"))
+        .ok()?;
     Some((connection, globals, queue))
 }
 
@@ -256,7 +305,10 @@ fn open() -> Option<Registry> {
 
 fn start(tx: mpsc::Sender<Vec<Workspace>>) -> Option<calloop::channel::SyncSender<Command>> {
     let (commands, receiver) = calloop::channel::sync_channel(16);
-    std::thread::Builder::new().name("workspaces".into()).spawn(move || run(receiver, tx)).ok()?;
+    std::thread::Builder::new()
+        .name("workspaces".into())
+        .spawn(move || run(receiver, tx))
+        .ok()?;
     Some(commands)
 }
 
@@ -269,7 +321,10 @@ fn run(commands: calloop::channel::Channel<Command>, tx: mpsc::Sender<Vec<Worksp
         Err(err) => return tracing::error!("workspaces: no event loop: {err}"),
     };
     let qh = queue.handle();
-    if WaylandSource::new(connection, queue).insert(event_loop.handle()).is_err() {
+    if WaylandSource::new(connection, queue)
+        .insert(event_loop.handle())
+        .is_err()
+    {
         return tracing::error!("workspaces: cannot watch the wayland socket");
     }
     let registry = RegistryState::new(&globals);
@@ -278,22 +333,26 @@ fn run(commands: calloop::channel::Channel<Command>, tx: mpsc::Sender<Vec<Worksp
         output_state: OutputState::new(&globals, &qh),
         workspace_state: WorkspaceState::new(&registry, &qh),
         registry,
-        panel_output: std::env::var("COSMIC_PANEL_OUTPUT").ok().filter(|name| !name.is_empty() && name != "all"),
+        panel_output: std::env::var("COSMIC_PANEL_OUTPUT")
+            .ok()
+            .filter(|name| !name.is_empty() && name != "all"),
         output: None,
         tx,
         running: true,
         ready: false,
     };
-    let inserted = event_loop.handle().insert_source(commands, |event, (), state| match event {
-        calloop::channel::Event::Msg(Command::Activate(handle)) => {
-            handle.activate();
-            match state.workspace_state.workspace_manager().get() {
-                Ok(manager) => manager.commit(),
-                Err(err) => tracing::warn!("workspaces: no manager to commit: {err}"),
+    let inserted = event_loop
+        .handle()
+        .insert_source(commands, |event, (), state| match event {
+            calloop::channel::Event::Msg(Command::Activate(handle)) => {
+                handle.activate();
+                match state.workspace_state.workspace_manager().get() {
+                    Ok(manager) => manager.commit(),
+                    Err(err) => tracing::warn!("workspaces: no manager to commit: {err}"),
+                }
             }
-        }
-        calloop::channel::Event::Closed => state.running = false,
-    });
+            calloop::channel::Event::Closed => state.running = false,
+        });
     if inserted.is_err() {
         return tracing::error!("workspaces: cannot watch for commands");
     }
@@ -327,7 +386,12 @@ impl State {
                 Some(output) => group.outputs.contains(output),
                 None => self.panel_output.is_none(),
             })
-            .flat_map(|group| group.workspaces.iter().filter_map(|handle| self.workspace_state.workspace_info(handle)))
+            .flat_map(|group| {
+                group
+                    .workspaces
+                    .iter()
+                    .filter_map(|handle| self.workspace_state.workspace_info(handle))
+            })
             .cloned()
             .collect()
     }

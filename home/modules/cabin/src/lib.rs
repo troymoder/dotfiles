@@ -11,8 +11,10 @@ pub mod app;
 pub mod applet;
 pub mod backend;
 pub mod bus;
+pub mod capture;
 pub mod clock;
 pub mod daemon;
+pub mod switcher;
 pub mod ui;
 pub mod workspaces;
 
@@ -36,7 +38,11 @@ pub fn prefer_integrated_gpu() {
     let mut unset: Vec<&str> = Vec::new();
     // Whatever started us may have asked for the dGPU (nvidia-offload, an
     // editor's environment): a select list wins over the disable list.
-    let select: Vec<String> = var("VK_LOADER_DRIVERS_SELECT").split(',').filter(|s| !s.is_empty() && !s.contains("nvidia")).map(str::to_owned).collect();
+    let select: Vec<String> = var("VK_LOADER_DRIVERS_SELECT")
+        .split(',')
+        .filter(|s| !s.is_empty() && !s.contains("nvidia"))
+        .map(str::to_owned)
+        .collect();
     if select.is_empty() {
         unset.push("VK_LOADER_DRIVERS_SELECT");
     } else {
@@ -44,18 +50,38 @@ pub fn prefer_integrated_gpu() {
     }
     let disabled = var("VK_LOADER_DRIVERS_DISABLE");
     if !disabled.contains("nvidia") {
-        set.push(("VK_LOADER_DRIVERS_DISABLE", if disabled.is_empty() { "*nvidia*".to_owned() } else { format!("{disabled},*nvidia*") }));
+        set.push((
+            "VK_LOADER_DRIVERS_DISABLE",
+            if disabled.is_empty() {
+                "*nvidia*".to_owned()
+            } else {
+                format!("{disabled},*nvidia*")
+            },
+        ));
     }
     // NVIDIA's implicit Vulkan layers load its driver into every Vulkan
     // process, its ICD disabled or not.
     let layers = var("VK_LOADER_LAYERS_DISABLE");
     if !layers.contains("VK_LAYER_NV") {
-        set.push(("VK_LOADER_LAYERS_DISABLE", if layers.is_empty() { "VK_LAYER_NV_*".to_owned() } else { format!("{layers},VK_LAYER_NV_*") }));
+        set.push((
+            "VK_LOADER_LAYERS_DISABLE",
+            if layers.is_empty() {
+                "VK_LAYER_NV_*".to_owned()
+            } else {
+                format!("{layers},VK_LAYER_NV_*")
+            },
+        ));
     }
     if std::path::Path::new(MESA_EGL).exists() {
         set.push(("__EGL_VENDOR_LIBRARY_FILENAMES", MESA_EGL.to_owned()));
     }
-    unset.extend(["__NV_PRIME_RENDER_OFFLOAD", "__NV_PRIME_RENDER_OFFLOAD_PROVIDER", "__VK_LAYER_NV_optimus", "__GLX_VENDOR_LIBRARY_NAME", "DRI_PRIME"]);
+    unset.extend([
+        "__NV_PRIME_RENDER_OFFLOAD",
+        "__NV_PRIME_RENDER_OFFLOAD_PROVIDER",
+        "__VK_LAYER_NV_optimus",
+        "__GLX_VENDOR_LIBRARY_NAME",
+        "DRI_PRIME",
+    ]);
     // SAFETY: called at the very start of main, while the process has one
     // thread and nothing reads the environment.
     unsafe {
@@ -72,6 +98,9 @@ pub fn prefer_integrated_gpu() {
 pub fn init_logging() {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn,cabin=info".into()))
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "warn,cabin=info".into()),
+        )
         .init();
 }

@@ -50,7 +50,14 @@ const CROS_EC_DEV_IOCXCMD: u32 = (3 << 30) | (20 << 16) | (0xEC << 8);
 
 /// A command to the EC: its reply, or the EC's error code.
 fn send(ec: &File, command: u32, params: &[u8]) -> io::Result<Result<Vec<u8>, u32>> {
-    let mut cmd = Command { version: 0, command, outsize: params.len() as u32, insize: 256, result: 0xff, data: [0; 256] };
+    let mut cmd = Command {
+        version: 0,
+        command,
+        outsize: params.len() as u32,
+        insize: 256,
+        result: 0xff,
+        data: [0; 256],
+    };
     cmd.data[..params.len()].copy_from_slice(params);
     // SAFETY: `cmd` is a cros_ec_command with the 256 bytes `insize` promises after it.
     let got = unsafe { libc::ioctl(ec.as_raw_fd(), CROS_EC_DEV_IOCXCMD as _, &mut cmd) };
@@ -106,7 +113,10 @@ fn port(ec: &File, index: u8) -> io::Result<Option<Port>> {
             active: d.get(12).is_some_and(|a| *a != 0),
             raw: d,
         })),
-        Ok(d) => Err(io::Error::other(format!("a short reply: {} bytes", d.len()))),
+        Ok(d) => Err(io::Error::other(format!(
+            "a short reply: {} bytes",
+            d.len()
+        ))),
     }
 }
 
@@ -115,8 +125,15 @@ fn port(ec: &File, index: u8) -> io::Result<Option<Port>> {
 /// can't speak for is passed over.
 fn charger_watts() -> io::Result<f64> {
     let ec = File::open(DEVICE)?;
-    let chargers: Vec<Port> = (0..PORTS).filter_map(|i| port(&ec, i).ok().flatten()).filter(|p| p.contract && p.sink).collect();
-    let pick = chargers.iter().find(|p| p.active).or_else(|| chargers.iter().max_by(|a, b| a.watts().total_cmp(&b.watts())));
+    let chargers: Vec<Port> = (0..PORTS)
+        .filter_map(|i| port(&ec, i).ok().flatten())
+        .filter(|p| p.contract && p.sink)
+        .collect();
+    let pick = chargers.iter().find(|p| p.active).or_else(|| {
+        chargers
+            .iter()
+            .max_by(|a, b| a.watts().total_cmp(&b.watts()))
+    });
     Ok(pick.map_or(0.0, Port::watts))
 }
 
@@ -139,13 +156,20 @@ impl Rapl {
     /// `RAPL_WINDOW` back; asked sooner, the same answer again.
     fn watts(&mut self) -> io::Result<Option<f64>> {
         let now = Instant::now();
-        if self.last.is_some_and(|(at, _)| now.duration_since(at) < RAPL_WINDOW) {
+        if self
+            .last
+            .is_some_and(|(at, _)| now.duration_since(at) < RAPL_WINDOW)
+        {
             return Ok(self.watts);
         }
-        let energy: u64 = std::fs::read_to_string(RAPL)?.trim().parse().map_err(io::Error::other)?;
+        let energy: u64 = std::fs::read_to_string(RAPL)?
+            .trim()
+            .parse()
+            .map_err(io::Error::other)?;
         // The counter wraps now and then: that stretch is passed over.
         if let Some((at, before)) = self.last.filter(|(_, before)| energy >= *before) {
-            self.watts = Some((energy - before) as f64 / 1e6 / now.duration_since(at).as_secs_f64());
+            self.watts =
+                Some((energy - before) as f64 / 1e6 / now.duration_since(at).as_secs_f64());
         }
         self.last = Some((now, energy));
         Ok(self.watts)
@@ -167,7 +191,10 @@ impl Service {
     /// The CPU package's power in watts, averaged over a second or more;
     /// an error on the first call, which only starts the count.
     fn cpu_watts(&self) -> zbus::fdo::Result<f64> {
-        let mut rapl = self.rapl.lock().map_err(|_| zbus::fdo::Error::Failed("poisoned".to_owned()))?;
+        let mut rapl = self
+            .rapl
+            .lock()
+            .map_err(|_| zbus::fdo::Error::Failed("poisoned".to_owned()))?;
         match rapl.watts() {
             Ok(Some(watts)) => Ok(watts),
             Ok(None) => Err(zbus::fdo::Error::Failed("not measured yet".to_owned())),
@@ -200,7 +227,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("charger: {:.1} W", charger_watts()?);
         return Ok(());
     }
-    let _conn = zbus::connection::Builder::system()?.name(BUS_NAME)?.serve_at(OBJECT_PATH, Service { rapl: Mutex::new(Rapl::default()) })?.build().await?;
+    let _conn = zbus::connection::Builder::system()?
+        .name(BUS_NAME)?
+        .serve_at(
+            OBJECT_PATH,
+            Service {
+                rapl: Mutex::new(Rapl::default()),
+            },
+        )?
+        .build()
+        .await?;
     std::future::pending::<()>().await;
     Ok(())
 }

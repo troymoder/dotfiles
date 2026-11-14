@@ -10,8 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use cosmic::{
     Element,
     iced::{
-        Length, Rectangle,
-        wgpu,
+        Length, Rectangle, wgpu,
         widget::shader::{self, Viewport},
     },
 };
@@ -21,7 +20,10 @@ const STRENGTH: f32 = 0.09;
 
 /// Grain over the rounded panel this widget covers.
 pub fn view<'a, M: 'a>(radius: f32) -> Element<'a, M> {
-    shader::Shader::new(Grain { radius }).width(Length::Fill).height(Length::Fill).into()
+    shader::Shader::new(Grain { radius })
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
 }
 
 struct Grain {
@@ -32,8 +34,17 @@ impl<M> shader::Program<M> for Grain {
     type State = ();
     type Primitive = Primitive;
 
-    fn draw(&self, _state: &(), _cursor: cosmic::iced::mouse::Cursor, bounds: Rectangle) -> Primitive {
-        Primitive { bounds, radius: self.radius, slot: AtomicUsize::new(0) }
+    fn draw(
+        &self,
+        _state: &(),
+        _cursor: cosmic::iced::mouse::Cursor,
+        bounds: Rectangle,
+    ) -> Primitive {
+        Primitive {
+            bounds,
+            radius: self.radius,
+            slot: AtomicUsize::new(0),
+        }
     }
 }
 
@@ -49,11 +60,23 @@ pub struct Primitive {
 impl shader::Primitive for Primitive {
     type Pipeline = Pipeline;
 
-    fn prepare(&self, pipeline: &mut Pipeline, device: &wgpu::Device, queue: &wgpu::Queue, _bounds: &Rectangle, viewport: &Viewport) {
+    fn prepare(
+        &self,
+        pipeline: &mut Pipeline,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        _bounds: &Rectangle,
+        viewport: &Viewport,
+    ) {
         let scale = viewport.scale_factor() as f32;
         let uniforms = Uniforms {
             // The panel in device pixels, as the fragment sees its own position.
-            rect: [self.bounds.x * scale, self.bounds.y * scale, self.bounds.width * scale, self.bounds.height * scale],
+            rect: [
+                self.bounds.x * scale,
+                self.bounds.y * scale,
+                self.bounds.width * scale,
+                self.bounds.height * scale,
+            ],
             radius: self.radius * scale,
             strength: STRENGTH,
             _pad: [0.0; 2],
@@ -86,7 +109,12 @@ struct Uniforms {
 impl Uniforms {
     fn bytes(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(32);
-        for value in self.rect.iter().chain([self.radius, self.strength].iter()).chain(self._pad.iter()) {
+        for value in self
+            .rect
+            .iter()
+            .chain([self.radius, self.strength].iter())
+            .chain(self._pad.iter())
+        {
             out.extend_from_slice(&value.to_ne_bytes());
         }
         out
@@ -121,7 +149,10 @@ impl Pipeline {
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("cabin grain"),
                 layout: &self.layout,
-                entries: &[wgpu::BindGroupEntry { binding: 0, resource: buffer.as_entire_binding() }],
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                }],
             });
             self.slots.push(Slot { buffer, bind_group });
         }
@@ -141,7 +172,11 @@ impl shader::Pipeline for Pipeline {
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
                 count: None,
             }],
         });
@@ -153,11 +188,20 @@ impl shader::Pipeline for Pipeline {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("cabin grain"),
             layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_main"), buffers: &[], compilation_options: Default::default() },
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
             fragment: Some(wgpu::FragmentState {
                 module: &module,
                 entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState { format, blend: Some(wgpu::BlendState::ALPHA_BLENDING), write_mask: wgpu::ColorWrites::ALL })],
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
@@ -166,7 +210,12 @@ impl shader::Pipeline for Pipeline {
             multiview_mask: None,
             cache: None,
         });
-        Self { pipeline, layout, slots: Vec::new(), used: 0 }
+        Self {
+            pipeline,
+            layout,
+            slots: Vec::new(),
+            used: 0,
+        }
     }
 
     fn trim(&mut self) {

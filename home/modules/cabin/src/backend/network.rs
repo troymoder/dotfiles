@@ -108,7 +108,10 @@ pub(crate) trait Manager {
     fn deactivate_connection(&self, active: &ObjectPath<'_>) -> zbus::Result<()>;
 }
 
-#[zbus::proxy(interface = "org.freedesktop.NetworkManager.Connection.Active", default_service = "org.freedesktop.NetworkManager")]
+#[zbus::proxy(
+    interface = "org.freedesktop.NetworkManager.Connection.Active",
+    default_service = "org.freedesktop.NetworkManager"
+)]
 pub(crate) trait Active {
     #[zbus(property)]
     fn id(&self) -> zbus::Result<String>;
@@ -127,13 +130,19 @@ pub(crate) trait Active {
     fn ip4_config(&self) -> zbus::Result<OwnedObjectPath>;
 }
 
-#[zbus::proxy(interface = "org.freedesktop.NetworkManager.IP4Config", default_service = "org.freedesktop.NetworkManager")]
+#[zbus::proxy(
+    interface = "org.freedesktop.NetworkManager.IP4Config",
+    default_service = "org.freedesktop.NetworkManager"
+)]
 pub(crate) trait Ip4Config {
     #[zbus(property)]
     fn nameserver_data(&self) -> zbus::Result<Vec<HashMap<String, zbus::zvariant::OwnedValue>>>;
 }
 
-#[zbus::proxy(interface = "org.freedesktop.NetworkManager.Device", default_service = "org.freedesktop.NetworkManager")]
+#[zbus::proxy(
+    interface = "org.freedesktop.NetworkManager.Device",
+    default_service = "org.freedesktop.NetworkManager"
+)]
 pub(crate) trait Device {
     /// 1 ethernet, 2 Wi-Fi.
     #[zbus(property)]
@@ -142,10 +151,18 @@ pub(crate) trait Device {
     fn interface(&self) -> zbus::Result<String>;
     #[zbus(property)]
     fn hw_address(&self) -> zbus::Result<String>;
-    fn reapply(&self, connection: HashMap<&str, HashMap<&str, Value<'_>>>, version_id: u64, flags: u32) -> zbus::Result<()>;
+    fn reapply(
+        &self,
+        connection: HashMap<&str, HashMap<&str, Value<'_>>>,
+        version_id: u64,
+        flags: u32,
+    ) -> zbus::Result<()>;
 }
 
-#[zbus::proxy(interface = "org.freedesktop.NetworkManager.Device.Wireless", default_service = "org.freedesktop.NetworkManager")]
+#[zbus::proxy(
+    interface = "org.freedesktop.NetworkManager.Device.Wireless",
+    default_service = "org.freedesktop.NetworkManager"
+)]
 trait Wireless {
     #[zbus(property)]
     fn active_access_point(&self) -> zbus::Result<OwnedObjectPath>;
@@ -154,7 +171,10 @@ trait Wireless {
     fn request_scan(&self, options: HashMap<&str, Value<'_>>) -> zbus::Result<()>;
 }
 
-#[zbus::proxy(interface = "org.freedesktop.NetworkManager.AccessPoint", default_service = "org.freedesktop.NetworkManager")]
+#[zbus::proxy(
+    interface = "org.freedesktop.NetworkManager.AccessPoint",
+    default_service = "org.freedesktop.NetworkManager"
+)]
 trait Ap {
     #[zbus(property)]
     fn ssid(&self) -> zbus::Result<Vec<u8>>;
@@ -177,7 +197,10 @@ trait SettingsManager {
     fn list_connections(&self) -> zbus::Result<Vec<OwnedObjectPath>>;
 }
 
-#[zbus::proxy(interface = "org.freedesktop.NetworkManager.Settings.Connection", default_service = "org.freedesktop.NetworkManager")]
+#[zbus::proxy(
+    interface = "org.freedesktop.NetworkManager.Settings.Connection",
+    default_service = "org.freedesktop.NetworkManager"
+)]
 pub(crate) trait Connection {
     fn get_settings(&self) -> zbus::Result<Settings>;
     fn update(&self, properties: HashMap<&str, HashMap<&str, Value<'_>>>) -> zbus::Result<()>;
@@ -188,7 +211,10 @@ fn none() -> ObjectPath<'static> {
 }
 
 async fn read(conn: &zbus::Connection) -> zbus::Result<Network> {
-    let nm = ManagerProxy::builder(conn).cache_properties(zbus::proxy::CacheProperties::No).build().await?;
+    let nm = ManagerProxy::builder(conn)
+        .cache_properties(zbus::proxy::CacheProperties::No)
+        .build()
+        .await?;
     let mut network = Network {
         has_wifi: false,
         wired_device: None,
@@ -212,14 +238,22 @@ async fn read(conn: &zbus::Connection) -> zbus::Result<Network> {
         match proxy.device_type().await {
             Ok(1) => {
                 network.wired_device.get_or_insert(device.clone());
-                ports.push(Port { interface: proxy.interface().await.unwrap_or_default(), address: proxy.hw_address().await.unwrap_or_default().to_uppercase() });
+                ports.push(Port {
+                    interface: proxy.interface().await.unwrap_or_default(),
+                    address: proxy.hw_address().await.unwrap_or_default().to_uppercase(),
+                });
             }
             Ok(2) => network.has_wifi = true,
             _ => {}
         }
     }
     for path in nm.active_connections().await.unwrap_or_default() {
-        let Ok(active) = ActiveProxy::builder(conn).path(path.clone())?.cache_properties(zbus::proxy::CacheProperties::No).build().await else {
+        let Ok(active) = ActiveProxy::builder(conn)
+            .path(path.clone())?
+            .cache_properties(zbus::proxy::CacheProperties::No)
+            .build()
+            .await
+        else {
             continue;
         };
         let (Ok(kind), Ok(state)) = (active.kind().await, active.state().await) else {
@@ -259,7 +293,9 @@ async fn read(conn: &zbus::Connection) -> zbus::Result<Network> {
     }
     // The DNS of the cable, else of the Wi-Fi.
     if let Some(physical) = network.wired.as_ref().or(network.wifi.as_ref()) {
-        network.dns = super::dns::current(conn, physical.active.clone(), physical.settings.clone()).await.ok();
+        network.dns = super::dns::current(conn, physical.active.clone(), physical.settings.clone())
+            .await
+            .ok();
     }
     Ok(network)
 }
@@ -271,28 +307,54 @@ pub async fn now() -> Option<Network> {
 
 pub fn subscription() -> Subscription<Network> {
     fn rules() -> Vec<zbus::MatchRule<'static>> {
-        super::signal(Some("org.freedesktop.NetworkManager"), None, Some("org.freedesktop.DBus.Properties"), Some("PropertiesChanged")).into_iter().collect()
+        super::signal(
+            Some("org.freedesktop.NetworkManager"),
+            None,
+            Some("org.freedesktop.DBus.Properties"),
+            Some("PropertiesChanged"),
+        )
+        .into_iter()
+        .collect()
     }
-    Subscription::run(|| super::watch(Duration::from_secs(20), || super::bus_changes(true, rules), now))
+    Subscription::run(|| {
+        super::watch(
+            Duration::from_secs(20),
+            || super::bus_changes(true, rules),
+            now,
+        )
+    })
 }
 
 pub async fn set_wifi(enabled: bool) -> zbus::Result<()> {
     let conn = zbus::Connection::system().await?;
-    ManagerProxy::new(&conn).await?.set_wireless_enabled(enabled).await
+    ManagerProxy::new(&conn)
+        .await?
+        .set_wireless_enabled(enabled)
+        .await
 }
 
 /// The cable brought up: a saved connection, or whatever NetworkManager
 /// picks for the device.
-pub async fn connect_wired(device: OwnedObjectPath, connection: Option<OwnedObjectPath>) -> zbus::Result<()> {
+pub async fn connect_wired(
+    device: OwnedObjectPath,
+    connection: Option<OwnedObjectPath>,
+) -> zbus::Result<()> {
     let conn = zbus::Connection::system().await?;
     let connection = connection.map(ObjectPath::from).unwrap_or_else(none);
-    ManagerProxy::new(&conn).await?.activate_connection(&connection, &device, &none()).await.map(|_| ())
+    ManagerProxy::new(&conn)
+        .await?
+        .activate_connection(&connection, &device, &none())
+        .await
+        .map(|_| ())
 }
 
 /// An active connection dropped.
 pub async fn disconnect(active: OwnedObjectPath) -> zbus::Result<()> {
     let conn = zbus::Connection::system().await?;
-    ManagerProxy::new(&conn).await?.deactivate_connection(&active).await
+    ManagerProxy::new(&conn)
+        .await?
+        .deactivate_connection(&active)
+        .await
 }
 
 /// A Wi-Fi network in reach.
@@ -327,7 +389,10 @@ pub struct Networks {
 
 async fn wifi_device(conn: &zbus::Connection) -> zbus::Result<Option<OwnedObjectPath>> {
     for device in ManagerProxy::new(conn).await?.get_devices().await? {
-        let proxy = DeviceProxy::builder(conn).path(device.clone())?.build().await?;
+        let proxy = DeviceProxy::builder(conn)
+            .path(device.clone())?
+            .build()
+            .await?;
         if proxy.device_type().await? == 2 {
             return Ok(Some(device));
         }
@@ -345,17 +410,34 @@ struct Port {
 /// Whether a wired connection can run on one of the ports there are: it is
 /// bound to none (any port will do), or to one by name or address.
 fn has_port(settings: &Settings, ports: &[Port]) -> bool {
-    let interface = settings.get("connection").and_then(|g| g.get("interface-name")).and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default();
+    let interface = settings
+        .get("connection")
+        .and_then(|g| g.get("interface-name"))
+        .and_then(|v| String::try_from(v.clone()).ok())
+        .unwrap_or_default();
     let address = settings
         .get("802-3-ethernet")
         .and_then(|g| g.get("mac-address"))
         .and_then(|v| Vec::<u8>::try_from(v.clone()).ok())
-        .map(|bytes| bytes.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(":"))
+        .map(|bytes| {
+            bytes
+                .iter()
+                .map(|b| format!("{b:02X}"))
+                .collect::<Vec<_>>()
+                .join(":")
+        })
         .unwrap_or_default();
-    ports.iter().any(|port| (interface.is_empty() || interface == port.interface) && (address.is_empty() || address == port.address))
+    ports.iter().any(|port| {
+        (interface.is_empty() || interface == port.interface)
+            && (address.is_empty() || address == port.address)
+    })
 }
 
-async fn wired_connections(conn: &zbus::Connection, up: Option<&Connected>, ports: &[Port]) -> Vec<WiredConnection> {
+async fn wired_connections(
+    conn: &zbus::Connection,
+    up: Option<&Connected>,
+    ports: &[Port],
+) -> Vec<WiredConnection> {
     let mut list = Vec::new();
     let Ok(settings) = SettingsManagerProxy::new(conn).await else {
         return list;
@@ -373,7 +455,10 @@ async fn wired_connections(conn: &zbus::Connection, up: Option<&Connected>, port
         let Some(group) = settings.get("connection") else {
             continue;
         };
-        let kind = group.get("type").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default();
+        let kind = group
+            .get("type")
+            .and_then(|v| String::try_from(v.clone()).ok())
+            .unwrap_or_default();
         if kind != "802-3-ethernet" {
             continue;
         }
@@ -381,10 +466,22 @@ async fn wired_connections(conn: &zbus::Connection, up: Option<&Connected>, port
         if active.is_none() && !has_port(&settings, ports) {
             continue;
         }
-        let name = group.get("id").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_else(|| "Wired".to_owned());
-        list.push(WiredConnection { name, settings: path, active });
+        let name = group
+            .get("id")
+            .and_then(|v| String::try_from(v.clone()).ok())
+            .unwrap_or_else(|| "Wired".to_owned());
+        list.push(WiredConnection {
+            name,
+            settings: path,
+            active,
+        });
     }
-    list.sort_by(|a, b| b.active.is_some().cmp(&a.active.is_some()).then_with(|| a.name.cmp(&b.name)));
+    list.sort_by(|a, b| {
+        b.active
+            .is_some()
+            .cmp(&a.active.is_some())
+            .then_with(|| a.name.cmp(&b.name))
+    });
     list
 }
 
@@ -395,7 +492,10 @@ async fn saved_wifi(conn: &zbus::Connection) -> HashMap<String, OwnedObjectPath>
         return saved;
     };
     for path in settings.list_connections().await.unwrap_or_default() {
-        let Ok(connection) = ConnectionProxy::builder(conn).path(path.clone()).and_then(|b| Ok(b.build())) else {
+        let Ok(connection) = ConnectionProxy::builder(conn)
+            .path(path.clone())
+            .and_then(|b| Ok(b.build()))
+        else {
             continue;
         };
         let Ok(connection) = connection.await else {
@@ -422,7 +522,11 @@ pub async fn networks(scan: bool) -> zbus::Result<Option<Networks>> {
     let Some(device) = wifi_device(&conn).await? else {
         return Ok(None);
     };
-    let wireless = WirelessProxy::builder(&conn).path(device.clone())?.cache_properties(zbus::proxy::CacheProperties::No).build().await?;
+    let wireless = WirelessProxy::builder(&conn)
+        .path(device.clone())?
+        .cache_properties(zbus::proxy::CacheProperties::No)
+        .build()
+        .await?;
     if scan {
         // Refused when one just ran; the list is fresh then anyway.
         _ = wireless.request_scan(HashMap::new()).await;
@@ -437,7 +541,9 @@ pub async fn networks(scan: bool) -> zbus::Result<Option<Networks>> {
             continue;
         }
         let strength = ap.strength().await.unwrap_or(0);
-        let secure = ap.flags().await.unwrap_or(0) & 1 != 0 || ap.wpa_flags().await.unwrap_or(0) != 0 || ap.rsn_flags().await.unwrap_or(0) != 0;
+        let secure = ap.flags().await.unwrap_or(0) & 1 != 0
+            || ap.wpa_flags().await.unwrap_or(0) != 0
+            || ap.rsn_flags().await.unwrap_or(0) != 0;
         let is_active = path == active;
         // One row per network, from its strongest access point.
         if let Some(known) = list.iter_mut().find(|n| n.ssid == ssid) {
@@ -448,7 +554,14 @@ pub async fn networks(scan: bool) -> zbus::Result<Option<Networks>> {
             }
             continue;
         }
-        list.push(AccessPoint { saved: saved.get(&ssid).cloned(), path, ssid, strength, secure, active: is_active });
+        list.push(AccessPoint {
+            saved: saved.get(&ssid).cloned(),
+            path,
+            ssid,
+            strength,
+            secure,
+            active: is_active,
+        });
     }
     list.sort_by_key(|n| (!n.active, n.saved.is_none(), std::cmp::Reverse(n.strength)));
     Ok(Some(Networks { device, list }))
@@ -464,13 +577,15 @@ pub async fn join(device: OwnedObjectPath, network: AccessPoint) -> zbus::Result
     let conn = zbus::Connection::system().await?;
     let nm = ManagerProxy::new(&conn).await?;
     if let Some(saved) = &network.saved {
-        nm.activate_connection(saved, &device, &network.path).await?;
+        nm.activate_connection(saved, &device, &network.path)
+            .await?;
         return Ok(Joined::Connecting);
     }
     if network.secure {
         return Ok(Joined::NeedsSettings);
     }
-    nm.add_and_activate_connection(HashMap::new(), &device, &network.path).await?;
+    nm.add_and_activate_connection(HashMap::new(), &device, &network.path)
+        .await?;
     Ok(Joined::Connecting)
 }
 
@@ -482,7 +597,11 @@ mod live_tests {
     async fn wired_connections_here() {
         let network = super::now().await.expect("NetworkManager answers");
         for connection in &network.wired_connections {
-            println!("wired: {} (up: {})", connection.name, connection.active.is_some());
+            println!(
+                "wired: {} (up: {})",
+                connection.name,
+                connection.active.is_some()
+            );
         }
     }
 }

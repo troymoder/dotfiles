@@ -74,9 +74,17 @@ impl PartialEq for Media {
 impl Media {
     /// Where playback is now, counting from when it was read.
     pub fn position_now(&self) -> i64 {
-        let elapsed = if self.playing { self.at.elapsed().as_micros() as i64 } else { 0 };
+        let elapsed = if self.playing {
+            self.at.elapsed().as_micros() as i64
+        } else {
+            0
+        };
         let now = self.position.max(0) + elapsed;
-        if self.is_live() { now } else { now.min(self.length) }
+        if self.is_live() {
+            now
+        } else {
+            now.min(self.length)
+        }
     }
 
     /// A stream with no end to seek in: no length, or an absurd one.
@@ -90,7 +98,10 @@ impl Media {
     }
 }
 
-#[zbus::proxy(interface = "org.mpris.MediaPlayer2.Player", default_path = "/org/mpris/MediaPlayer2")]
+#[zbus::proxy(
+    interface = "org.mpris.MediaPlayer2.Player",
+    default_path = "/org/mpris/MediaPlayer2"
+)]
 trait Player {
     fn play_pause(&self) -> zbus::Result<()>;
     fn next(&self) -> zbus::Result<()>;
@@ -119,7 +130,10 @@ trait Player {
     fn can_go_previous(&self) -> zbus::Result<bool>;
 }
 
-#[zbus::proxy(interface = "org.mpris.MediaPlayer2", default_path = "/org/mpris/MediaPlayer2")]
+#[zbus::proxy(
+    interface = "org.mpris.MediaPlayer2",
+    default_path = "/org/mpris/MediaPlayer2"
+)]
 trait MediaPlayer {
     #[zbus(property)]
     fn identity(&self) -> zbus::Result<String>;
@@ -129,12 +143,20 @@ trait MediaPlayer {
 }
 
 async fn player(conn: &zbus::Connection, service: &str) -> zbus::Result<PlayerProxy<'static>> {
-    PlayerProxy::builder(conn).destination(service.to_owned())?.cache_properties(zbus::proxy::CacheProperties::No).build().await
+    PlayerProxy::builder(conn)
+        .destination(service.to_owned())?
+        .cache_properties(zbus::proxy::CacheProperties::No)
+        .build()
+        .await
 }
 
 fn text(metadata: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
     let value = metadata.get(key)?;
-    String::try_from(value.clone()).ok().or_else(|| Vec::<String>::try_from(value.clone()).ok().map(|v| v.join(", ")))
+    String::try_from(value.clone()).ok().or_else(|| {
+        Vec::<String>::try_from(value.clone())
+            .ok()
+            .map(|v| v.join(", "))
+    })
 }
 
 fn cache_dir() -> Option<PathBuf> {
@@ -157,7 +179,11 @@ async fn cover(url: &str) -> Option<PathBuf> {
     // Browsers write each cover over the same file.
     if let Some(path) = &local {
         let modified = tokio::fs::metadata(path).await.ok()?.modified().ok()?;
-        modified.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs().hash(&mut hasher);
+        modified
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_secs()
+            .hash(&mut hasher);
     }
     let square = dir.join(format!("{:016x}.png", hasher.finish()));
     if square.exists() {
@@ -167,7 +193,11 @@ async fn cover(url: &str) -> Option<PathBuf> {
     let bytes = match &local {
         Some(path) => tokio::fs::read(path).await.ok()?,
         None => {
-            let output = tokio::process::Command::new("curl").args(["-sfL", "--max-time", "5", url]).output().await.ok()?;
+            let output = tokio::process::Command::new("curl")
+                .args(["-sfL", "--max-time", "5", url])
+                .output()
+                .await
+                .ok()?;
             if !output.status.success() {
                 return None;
             }
@@ -178,7 +208,15 @@ async fn cover(url: &str) -> Option<PathBuf> {
     let cropped = tokio::task::spawn_blocking(move || {
         let image = image::load_from_memory(&bytes)?;
         let side = image.width().min(image.height());
-        image.crop_imm((image.width() - side) / 2, (image.height() - side) / 2, side, side).thumbnail(256, 256).save(&saved)?;
+        image
+            .crop_imm(
+                (image.width() - side) / 2,
+                (image.height() - side) / 2,
+                side,
+                side,
+            )
+            .thumbnail(256, 256)
+            .save(&saved)?;
         Ok::<(), image::ImageError>(())
     })
     .await;
@@ -205,9 +243,16 @@ async fn backdrop(cover: &std::path::Path, _tint: Option<[u8; 3]>) -> Option<Pat
         let image = image::open(&from).ok()?;
         let (width, height) = (400u32, 120u32);
         let (small_w, small_h, pad) = (width / 4, height / 4, 8u32);
-        let small = image.resize_to_fill(small_w + pad * 2, small_h + pad * 2, image::imageops::FilterType::Triangle).to_rgba8();
+        let small = image
+            .resize_to_fill(
+                small_w + pad * 2,
+                small_h + pad * 2,
+                image::imageops::FilterType::Triangle,
+            )
+            .to_rgba8();
         let mut blurred = image::imageops::blur(&small, 6.5);
-        let mut cropped = image::imageops::crop(&mut blurred, pad, pad, small_w, small_h).to_image();
+        let mut cropped =
+            image::imageops::crop(&mut blurred, pad, pad, small_w, small_h).to_image();
         const DARK: [f32; 3] = [8.0, 12.0, 26.0];
         const ART_MIX: f32 = 0.5;
         for pixel in cropped.pixels_mut() {
@@ -217,7 +262,12 @@ async fn backdrop(cover: &std::path::Path, _tint: Option<[u8; 3]>) -> Option<Pat
             let mix = |c: f32, d: f32| (d + (vivid(c) - d) * ART_MIX).round() as u8;
             pixel.0 = [mix(r, DARK[0]), mix(g, DARK[1]), mix(b, DARK[2]), 255];
         }
-        let full = image::imageops::resize(&cropped, width, height, image::imageops::FilterType::CatmullRom);
+        let full = image::imageops::resize(
+            &cropped,
+            width,
+            height,
+            image::imageops::FilterType::CatmullRom,
+        );
         full.save(&to).ok()
     })
     .await
@@ -242,7 +292,11 @@ async fn cover_color(path: &std::path::Path) -> Option<[u8; 3]> {
             let [r, g, b] = pixel.0.map(f32::from);
             let saturation = (r.max(g).max(b) - r.min(g).min(b)) / 255.0;
             let weight = 0.05 + saturation * saturation;
-            sum = [sum[0] + r * weight, sum[1] + g * weight, sum[2] + b * weight];
+            sum = [
+                sum[0] + r * weight,
+                sum[1] + g * weight,
+                sum[2] + b * weight,
+            ];
             weights += weight;
         }
         (weights > 0.0).then(|| sum.map(|channel| (channel / weights).round() as u8))
@@ -267,13 +321,32 @@ async fn read(conn: &zbus::Connection, service: &str) -> zbus::Result<Media> {
         None => None,
     };
     let backdrop = match &art {
-        Some(path) if cache_dir().is_some_and(|dir| path.starts_with(dir)) => backdrop(path, color).await,
+        Some(path) if cache_dir().is_some_and(|dir| path.starts_with(dir)) => {
+            backdrop(path, color).await
+        }
         _ => None,
     };
-    let root = MediaPlayerProxy::builder(conn).destination(service.to_owned())?.cache_properties(zbus::proxy::CacheProperties::No).build().await?;
-    let app = root.identity().await.unwrap_or_else(|_| service.trim_start_matches("org.mpris.MediaPlayer2.").to_owned());
+    let root = MediaPlayerProxy::builder(conn)
+        .destination(service.to_owned())?
+        .cache_properties(zbus::proxy::CacheProperties::No)
+        .build()
+        .await?;
+    let app = root.identity().await.unwrap_or_else(|_| {
+        service
+            .trim_start_matches("org.mpris.MediaPlayer2.")
+            .to_owned()
+    });
     let can_raise = root.can_raise().await.unwrap_or(false);
-    let icon = super::apps::icon(&app, Some(service.trim_start_matches("org.mpris.MediaPlayer2.").split('.').next().unwrap_or_default()));
+    let icon = super::apps::icon(
+        &app,
+        Some(
+            service
+                .trim_start_matches("org.mpris.MediaPlayer2.")
+                .split('.')
+                .next()
+                .unwrap_or_default(),
+        ),
+    );
     Ok(Media {
         service: service.to_owned(),
         app,
@@ -293,11 +366,19 @@ async fn read(conn: &zbus::Connection, service: &str) -> zbus::Result<Media> {
         can_seek: proxy.can_seek().await.unwrap_or(false),
         // Spotify sends the track id as a string, not an object path.
         track: metadata.get("mpris:trackid").and_then(|v| {
-            OwnedObjectPath::try_from(v.clone()).ok().or_else(|| String::try_from(v.clone()).ok().and_then(|s| OwnedObjectPath::try_from(s).ok()))
+            OwnedObjectPath::try_from(v.clone()).ok().or_else(|| {
+                String::try_from(v.clone())
+                    .ok()
+                    .and_then(|s| OwnedObjectPath::try_from(s).ok())
+            })
         }),
         length: metadata
             .get("mpris:length")
-            .and_then(|v| i64::try_from(v.clone()).ok().or_else(|| u64::try_from(v.clone()).ok().map(|l| l as i64)))
+            .and_then(|v| {
+                i64::try_from(v.clone())
+                    .ok()
+                    .or_else(|| u64::try_from(v.clone()).ok().map(|l| l as i64))
+            })
             .unwrap_or(0),
         position: proxy.position().await.unwrap_or(0),
         at: Instant::now(),
@@ -336,9 +417,19 @@ pub fn subscription() -> Subscription<Vec<Media>> {
     fn rules() -> Vec<zbus::MatchRule<'static>> {
         let path = "/org/mpris/MediaPlayer2";
         [
-            super::signal(None, Some(path), Some("org.freedesktop.DBus.Properties"), Some("PropertiesChanged")),
+            super::signal(
+                None,
+                Some(path),
+                Some("org.freedesktop.DBus.Properties"),
+                Some("PropertiesChanged"),
+            ),
             // A jump in what's playing, which changes no property.
-            super::signal(None, Some(path), Some("org.mpris.MediaPlayer2.Player"), Some("Seeked")),
+            super::signal(
+                None,
+                Some(path),
+                Some("org.mpris.MediaPlayer2.Player"),
+                Some("Seeked"),
+            ),
             // Players come and go; only theirs, or the bus's chatter would
             // hold up the rest.
             zbus::MatchRule::builder()
@@ -353,12 +444,22 @@ pub fn subscription() -> Subscription<Vec<Media>> {
         .flatten()
         .collect()
     }
-    Subscription::run(|| super::watch(Duration::from_secs(15), || super::bus_changes(false, rules), now))
+    Subscription::run(|| {
+        super::watch(
+            Duration::from_secs(15),
+            || super::bus_changes(false, rules),
+            now,
+        )
+    })
 }
 
 /// Playback moved to a position: by the track's id when there is one, else
 /// relative to where the player says it is.
-pub async fn seek(service: String, track: Option<OwnedObjectPath>, position: i64) -> zbus::Result<()> {
+pub async fn seek(
+    service: String,
+    track: Option<OwnedObjectPath>,
+    position: i64,
+) -> zbus::Result<()> {
     let conn = zbus::Connection::session().await?;
     let player = player(&conn, &service).await?;
     match track {
@@ -373,7 +474,12 @@ pub async fn seek(service: String, track: Option<OwnedObjectPath>, position: i64
 /// The player's window brought up.
 pub async fn raise(service: String) -> zbus::Result<()> {
     let conn = zbus::Connection::session().await?;
-    MediaPlayerProxy::builder(&conn).destination(service)?.build().await?.raise().await
+    MediaPlayerProxy::builder(&conn)
+        .destination(service)?
+        .build()
+        .await?
+        .raise()
+        .await
 }
 
 pub async fn set_shuffle(service: String, shuffle: bool) -> zbus::Result<()> {
@@ -383,14 +489,22 @@ pub async fn set_shuffle(service: String, shuffle: bool) -> zbus::Result<()> {
 
 pub async fn set_loop(service: String, status: String) -> zbus::Result<()> {
     let conn = zbus::Connection::session().await?;
-    player(&conn, &service).await?.set_loop_status(&status).await
+    player(&conn, &service)
+        .await?
+        .set_loop_status(&status)
+        .await
 }
 
 /// Microseconds as "3:28", or "1:02:05" past an hour.
 pub fn time(micros: i64) -> String {
     let seconds = (micros.max(0) / 1_000_000) as u64;
     if seconds >= 3600 {
-        format!("{}:{:02}:{:02}", seconds / 3600, seconds / 60 % 60, seconds % 60)
+        format!(
+            "{}:{:02}:{:02}",
+            seconds / 3600,
+            seconds / 60 % 60,
+            seconds % 60
+        )
     } else {
         format!("{}:{:02}", seconds / 60, seconds % 60)
     }
@@ -412,4 +526,3 @@ pub async fn control(service: String, control: Control) -> zbus::Result<()> {
         Control::Previous => proxy.previous().await,
     }
 }
-

@@ -24,7 +24,11 @@ pub struct Place {
 
 /// Where the weather is for when GeoClue can't say.
 fn fallback() -> Place {
-    Place { name: "Cape Town".to_owned(), latitude: -33.9249, longitude: 18.4241 }
+    Place {
+        name: "Cape Town".to_owned(),
+        latitude: -33.9249,
+        longitude: 18.4241,
+    }
 }
 
 /// How long a place found is kept before asking again.
@@ -42,7 +46,10 @@ trait Manager {
     fn get_client(&self) -> zbus::Result<OwnedObjectPath>;
 }
 
-#[zbus::proxy(interface = "org.freedesktop.GeoClue2.Client", default_service = "org.freedesktop.GeoClue2")]
+#[zbus::proxy(
+    interface = "org.freedesktop.GeoClue2.Client",
+    default_service = "org.freedesktop.GeoClue2"
+)]
 trait Client {
     fn start(&self) -> zbus::Result<()>;
     fn stop(&self) -> zbus::Result<()>;
@@ -55,10 +62,17 @@ trait Client {
     #[zbus(property)]
     fn set_distance_threshold(&self, metres: u32) -> zbus::Result<()>;
     #[zbus(signal)]
-    fn location_updated(&self, old: zbus::zvariant::ObjectPath<'_>, new: zbus::zvariant::ObjectPath<'_>) -> zbus::Result<()>;
+    fn location_updated(
+        &self,
+        old: zbus::zvariant::ObjectPath<'_>,
+        new: zbus::zvariant::ObjectPath<'_>,
+    ) -> zbus::Result<()>;
 }
 
-#[zbus::proxy(interface = "org.freedesktop.GeoClue2.Location", default_service = "org.freedesktop.GeoClue2")]
+#[zbus::proxy(
+    interface = "org.freedesktop.GeoClue2.Location",
+    default_service = "org.freedesktop.GeoClue2"
+)]
 trait Location {
     #[zbus(property)]
     fn latitude(&self) -> zbus::Result<f64>;
@@ -71,7 +85,10 @@ trait Location {
 async fn coordinates() -> zbus::Result<(f64, f64)> {
     let conn = zbus::Connection::system().await?;
     let client_path = ManagerProxy::new(&conn).await?.get_client().await?;
-    let client = ClientProxy::builder(&conn).path(client_path)?.build().await?;
+    let client = ClientProxy::builder(&conn)
+        .path(client_path)?
+        .build()
+        .await?;
     client.set_desktop_id(crate::CLOCK_ID).await?;
     client.set_requested_accuracy_level(ACCURACY_CITY).await?;
     client.set_distance_threshold(5000).await?;
@@ -97,10 +114,19 @@ async fn coordinates() -> zbus::Result<(f64, f64)> {
 /// The place's name, from Nominatim: the city, else the town, the village,
 /// the county or the state.
 async fn name_of(latitude: f64, longitude: f64) -> Option<String> {
-    let url = format!("https://nominatim.openstreetmap.org/reverse?lat={latitude:.4}&lon={longitude:.4}&format=jsonv2&zoom=10&accept-language=en");
+    let url = format!(
+        "https://nominatim.openstreetmap.org/reverse?lat={latitude:.4}&lon={longitude:.4}&format=jsonv2&zoom=10&accept-language=en"
+    );
     // Nominatim asks every client to name itself.
     let output = tokio::process::Command::new("curl")
-        .args(["-sfL", "--max-time", "10", "-A", "cabin-clock/0.1 (COSMIC panel applet)", &url])
+        .args([
+            "-sfL",
+            "--max-time",
+            "10",
+            "-A",
+            "cabin-clock/0.1 (COSMIC panel applet)",
+            &url,
+        ])
         .output()
         .await
         .ok()?;
@@ -127,8 +153,14 @@ pub async fn current() -> Place {
     }
     let place = match coordinates().await {
         Ok((latitude, longitude)) => {
-            let name = name_of(latitude, longitude).await.unwrap_or_else(|| format!("{latitude:.2}, {longitude:.2}"));
-            Place { name, latitude, longitude }
+            let name = name_of(latitude, longitude)
+                .await
+                .unwrap_or_else(|| format!("{latitude:.2}, {longitude:.2}"));
+            Place {
+                name,
+                latitude,
+                longitude,
+            }
         }
         Err(err) => {
             tracing::warn!("no location from GeoClue: {err}");

@@ -8,6 +8,8 @@ use std::{collections::HashMap, sync::Mutex};
 struct Entry {
     id: String,
     name: String,
+    /// The name as written, to show.
+    title: String,
     wm_class: String,
     exec: String,
     icon: String,
@@ -15,11 +17,18 @@ struct Entry {
 
 fn entries() -> Vec<Entry> {
     let home = std::env::var("HOME").unwrap_or_default();
-    let data_home = std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| format!("{home}/.local/share"));
-    let data_dirs = std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".to_owned());
+    let data_home =
+        std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| format!("{home}/.local/share"));
+    let data_dirs =
+        std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".to_owned());
     let dirs = std::iter::once(data_home)
         .chain(data_dirs.split(':').map(str::to_owned))
-        .chain([format!("{home}/.nix-profile/share"), "/run/current-system/sw/share".to_owned(), "/etc/profiles/per-user".to_owned() + &format!("/{}/share", std::env::var("USER").unwrap_or_default())]);
+        .chain([
+            format!("{home}/.nix-profile/share"),
+            "/run/current-system/sw/share".to_owned(),
+            "/etc/profiles/per-user".to_owned()
+                + &format!("/{}/share", std::env::var("USER").unwrap_or_default()),
+        ]);
     let mut entries = Vec::new();
     for dir in dirs {
         let Ok(files) = std::fs::read_dir(format!("{dir}/applications")) else {
@@ -34,19 +43,37 @@ fn entries() -> Vec<Entry> {
                 continue;
             };
             let mut entry = Entry {
-                id: path.file_stem().unwrap_or_default().to_string_lossy().to_lowercase(),
+                id: path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_lowercase(),
                 name: String::new(),
+                title: String::new(),
                 wm_class: String::new(),
                 exec: String::new(),
                 icon: String::new(),
             };
-            for line in text.lines().skip_while(|l| l.trim() != "[Desktop Entry]").skip(1).take_while(|l| !l.starts_with('[')) {
+            for line in text
+                .lines()
+                .skip_while(|l| l.trim() != "[Desktop Entry]")
+                .skip(1)
+                .take_while(|l| !l.starts_with('['))
+            {
                 match line.split_once('=') {
-                    Some(("Name", value)) => entry.name = value.trim().to_lowercase(),
+                    Some(("Name", value)) => {
+                        entry.title = value.trim().to_owned();
+                        entry.name = entry.title.to_lowercase();
+                    }
                     Some(("StartupWMClass", value)) => entry.wm_class = value.trim().to_lowercase(),
                     Some(("Icon", value)) => entry.icon = value.trim().to_owned(),
                     Some(("Exec", value)) => {
-                        entry.exec = value.split_whitespace().next().and_then(|e| e.rsplit('/').next()).unwrap_or_default().to_lowercase();
+                        entry.exec = value
+                            .split_whitespace()
+                            .next()
+                            .and_then(|e| e.rsplit('/').next())
+                            .unwrap_or_default()
+                            .to_lowercase();
                     }
                     _ => {}
                 }
@@ -59,17 +86,24 @@ fn entries() -> Vec<Entry> {
     entries
 }
 
-/// The icon of the app called `app`, run as `binary` if known; looked up
-/// once per name.
+/// The icon of the app called `app`, run as `binary` if known.
 pub fn icon(app: &str, binary: Option<&str>) -> Option<String> {
+    find(app, binary).map(|(_, icon)| icon)
+}
+
+/// The name and icon of the app called `app` (its app id will do), run as
+/// `binary` if known, from its desktop entry; looked up once per name.
+pub fn find(app: &str, binary: Option<&str>) -> Option<(String, String)> {
     static ENTRIES: Mutex<Option<Vec<Entry>>> = Mutex::new(None);
-    static FOUND: Mutex<Option<HashMap<String, Option<String>>>> = Mutex::new(None);
+    static FOUND: Mutex<Option<HashMap<String, Option<(String, String)>>>> = Mutex::new(None);
     let key = format!("{app}\u{0}{}", binary.unwrap_or_default());
     if let Some(found) = FOUND.lock().ok()?.get_or_insert_default().get(&key) {
         return found.clone();
     }
     let app = app.trim().to_lowercase();
-    let binary = binary.map(|b| b.trim().to_lowercase()).filter(|b| !b.is_empty());
+    let binary = binary
+        .map(|b| b.trim().to_lowercase())
+        .filter(|b| !b.is_empty());
     let dashed = app.replace(' ', "-");
     let found = {
         let mut entries = ENTRIES.lock().ok()?;
@@ -77,11 +111,29 @@ pub fn icon(app: &str, binary: Option<&str>) -> Option<String> {
         entries
             .iter()
             .find(|e| e.name == app)
-            .or_else(|| entries.iter().find(|e| e.wm_class == app || e.id == dashed || e.id == app))
-            .or_else(|| entries.iter().find(|e| e.id.rsplit('.').next() == Some(&dashed)))
-            .or_else(|| binary.as_ref().and_then(|b| entries.iter().find(|e| &e.exec == b || e.id == *b || e.id.rsplit('.').next() == Some(b))))
-            .map(|e| e.icon.clone())
+            .or_else(|| {
+                entries
+                    .iter()
+                    .find(|e| e.wm_class == app || e.id == dashed || e.id == app)
+            })
+            .or_else(|| {
+                entries
+                    .iter()
+                    .find(|e| e.id.rsplit('.').next() == Some(&dashed))
+            })
+            .or_else(|| {
+                binary.as_ref().and_then(|b| {
+                    entries
+                        .iter()
+                        .find(|e| &e.exec == b || e.id == *b || e.id.rsplit('.').next() == Some(b))
+                })
+            })
+            .map(|e| (e.title.clone(), e.icon.clone()))
     };
-    FOUND.lock().ok()?.get_or_insert_default().insert(key, found.clone());
+    FOUND
+        .lock()
+        .ok()?
+        .get_or_insert_default()
+        .insert(key, found.clone());
     found
 }

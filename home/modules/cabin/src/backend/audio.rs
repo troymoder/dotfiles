@@ -33,7 +33,11 @@ impl Volume {
     }
 
     pub fn input_icon(&self) -> &'static str {
-        if self.muted || self.level <= 0.0 { "microphone-sensitivity-muted-symbolic" } else { "audio-input-microphone-symbolic" }
+        if self.muted || self.level <= 0.0 {
+            "microphone-sensitivity-muted-symbolic"
+        } else {
+            "audio-input-microphone-symbolic"
+        }
     }
 }
 
@@ -85,11 +89,18 @@ fn pactl() -> tokio::process::Command {
 fn parse_volume(output: &str) -> Option<Volume> {
     let rest = output.trim().strip_prefix("Volume:")?.trim();
     let level = rest.split_whitespace().next()?.parse().ok()?;
-    Some(Volume { level, muted: rest.contains("[MUTED]") })
+    Some(Volume {
+        level,
+        muted: rest.contains("[MUTED]"),
+    })
 }
 
 async fn volume(node: &str) -> Option<Volume> {
-    let output = tokio::process::Command::new("wpctl").args(["get-volume", node]).output().await.ok()?;
+    let output = tokio::process::Command::new("wpctl")
+        .args(["get-volume", node])
+        .output()
+        .await
+        .ok()?;
     parse_volume(&String::from_utf8_lossy(&output.stdout))
 }
 
@@ -111,7 +122,11 @@ async fn sinks(default: &str) -> Vec<Device> {
         .filter_map(|sink| {
             let name = sink["name"].as_str()?;
             let active = sink["active_port"].as_str();
-            let port = sink["ports"].as_array().into_iter().flatten().find(|port| port["name"].as_str() == active);
+            let port = sink["ports"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|port| port["name"].as_str() == active);
             let unplugged = port.is_some_and(|p| p["availability"] == "not available");
             if unplugged && name != default {
                 return None;
@@ -120,14 +135,22 @@ async fn sinks(default: &str) -> Vec<Device> {
                 .filter(|_| !name.starts_with("bluez"))
                 .and_then(|p| p["description"].as_str())
                 .or(sink["description"].as_str())?;
-            Some(Device { name: name.to_owned(), description: description.to_owned(), index: sink["index"].as_u64().unwrap_or(0) })
+            Some(Device {
+                name: name.to_owned(),
+                description: description.to_owned(),
+                index: sink["index"].as_u64().unwrap_or(0),
+            })
         })
         .collect()
 }
 
 /// Inputs, leaving out the monitors of outputs.
 async fn sources() -> Vec<Device> {
-    let Ok(list) = pactl().args(["-f", "json", "list", "sources"]).output().await else {
+    let Ok(list) = pactl()
+        .args(["-f", "json", "list", "sources"])
+        .output()
+        .await
+    else {
         return Vec::new();
     };
     let list: Vec<serde_json::Value> = serde_json::from_slice(&list.stdout).unwrap_or_default();
@@ -137,7 +160,11 @@ async fn sources() -> Vec<Device> {
             if name.ends_with(".monitor") {
                 return None;
             }
-            Some(Device { name: name.to_owned(), description: source["description"].as_str()?.to_owned(), index: source["index"].as_u64().unwrap_or(0) })
+            Some(Device {
+                name: name.to_owned(),
+                description: source["description"].as_str()?.to_owned(),
+                index: source["index"].as_u64().unwrap_or(0),
+            })
         })
         .collect()
 }
@@ -151,7 +178,11 @@ fn level(volume: &serde_json::Value) -> f32 {
         .filter_map(|channel| channel["value"].as_f64())
         .map(|value| value as f32 / 65536.0)
         .collect();
-    if levels.is_empty() { 0.0 } else { levels.iter().sum::<f32>() / levels.len() as f32 }
+    if levels.is_empty() {
+        0.0
+    } else {
+        levels.iter().sum::<f32>() / levels.len() as f32
+    }
 }
 
 fn property<'a>(object: &'a serde_json::Value, key: &str) -> Option<&'a str> {
@@ -161,7 +192,11 @@ fn property<'a>(object: &'a serde_json::Value, key: &str) -> Option<&'a str> {
 /// Apps playing sound, one row each however many streams they have; each
 /// with the output it's on, by the sinks' numbers.
 async fn streams(sinks: &[Device]) -> Vec<Stream> {
-    let Ok(list) = pactl().args(["-f", "json", "list", "sink-inputs"]).output().await else {
+    let Ok(list) = pactl()
+        .args(["-f", "json", "list", "sink-inputs"])
+        .output()
+        .await
+    else {
         return Vec::new();
     };
     let list: Vec<serde_json::Value> = serde_json::from_slice(&list.stdout).unwrap_or_default();
@@ -176,7 +211,10 @@ async fn streams(sinks: &[Device]) -> Vec<Stream> {
         };
         let muted = input["mute"].as_bool().unwrap_or(false);
         let level = level(&input["volume"]);
-        let sink = input["sink"].as_u64().and_then(|i| sinks.iter().find(|s| s.index == i)).map(|s| s.name.clone());
+        let sink = input["sink"]
+            .as_u64()
+            .and_then(|i| sinks.iter().find(|s| s.index == i))
+            .map(|s| s.name.clone());
         if let Some(stream) = streams.iter_mut().find(|s| s.app == app) {
             stream.indices.push(index as u32);
             stream.level = stream.level.max(level);
@@ -203,7 +241,10 @@ async fn streams(sinks: &[Device]) -> Vec<Stream> {
 /// An app's streams moved to another output.
 pub async fn move_streams(indices: Vec<u32>, sink: String) {
     for index in indices {
-        _ = pactl().args(["move-sink-input", &index.to_string(), &sink]).status().await;
+        _ = pactl()
+            .args(["move-sink-input", &index.to_string(), &sink])
+            .status()
+            .await;
     }
 }
 
@@ -217,7 +258,10 @@ pub async fn set_stream_volume(indices: Vec<u32>, level: f32) {
     LATEST
         .send((indices, level), |(indices, level)| async move {
             for index in indices {
-                _ = pactl().args(["set-sink-input-volume", &index.to_string(), &percent(level)]).status().await;
+                _ = pactl()
+                    .args(["set-sink-input-volume", &index.to_string(), &percent(level)])
+                    .status()
+                    .await;
             }
         })
         .await;
@@ -225,7 +269,14 @@ pub async fn set_stream_volume(indices: Vec<u32>, level: f32) {
 
 pub async fn set_stream_mute(indices: Vec<u32>, muted: bool) {
     for index in indices {
-        _ = pactl().args(["set-sink-input-mute", &index.to_string(), if muted { "1" } else { "0" }]).status().await;
+        _ = pactl()
+            .args([
+                "set-sink-input-mute",
+                &index.to_string(),
+                if muted { "1" } else { "0" },
+            ])
+            .status()
+            .await;
     }
 }
 
@@ -253,45 +304,59 @@ fn changes() -> Changes {
 fn async_stream() -> Changes {
     use futures::stream;
     Box::pin(
-        stream::unfold(None::<tokio::io::Lines<tokio::io::BufReader<tokio::process::ChildStdout>>>, |mut lines| async move {
-            loop {
-                if lines.is_none() {
-                    let mut command = pactl();
-                    command.arg("subscribe").stdout(Stdio::piped()).kill_on_drop(true);
-                    // SAFETY: prctl is async-signal-safe.
-                    unsafe {
-                        command.pre_exec(|| {
-                            libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
-                            Ok(())
-                        });
-                    }
-                    match command.spawn().ok().and_then(|mut child| child.stdout.take().map(|out| (child, out))) {
-                        Some((child, stdout)) => {
-                            // Kept alive by the reader's lifetime below.
-                            std::mem::forget(child);
-                            lines = Some(tokio::io::BufReader::new(stdout).lines());
+        stream::unfold(
+            None::<tokio::io::Lines<tokio::io::BufReader<tokio::process::ChildStdout>>>,
+            |mut lines| async move {
+                loop {
+                    if lines.is_none() {
+                        let mut command = pactl();
+                        command
+                            .arg("subscribe")
+                            .stdout(Stdio::piped())
+                            .kill_on_drop(true);
+                        // SAFETY: prctl is async-signal-safe.
+                        unsafe {
+                            command.pre_exec(|| {
+                                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+                                Ok(())
+                            });
                         }
-                        None => {
-                            tokio::time::sleep(Duration::from_secs(5)).await;
-                            continue;
+                        match command
+                            .spawn()
+                            .ok()
+                            .and_then(|mut child| child.stdout.take().map(|out| (child, out)))
+                        {
+                            Some((child, stdout)) => {
+                                // Kept alive by the reader's lifetime below.
+                                std::mem::forget(child);
+                                lines = Some(tokio::io::BufReader::new(stdout).lines());
+                            }
+                            None => {
+                                tokio::time::sleep(Duration::from_secs(5)).await;
+                                continue;
+                            }
                         }
                     }
-                }
-                match lines.as_mut().unwrap().next_line().await {
-                    Ok(Some(line)) => {
-                        if line.contains("sink") || line.contains("source") || line.contains("server") || line.contains("sink-input") {
+                    match lines.as_mut().unwrap().next_line().await {
+                        Ok(Some(line)) => {
+                            if line.contains("sink")
+                                || line.contains("source")
+                                || line.contains("server")
+                                || line.contains("sink-input")
+                            {
+                                return Some(((), lines));
+                            }
+                        }
+                        // pactl went away, say PipeWire restarted.
+                        _ => {
+                            lines = None;
+                            tokio::time::sleep(Duration::from_secs(2)).await;
                             return Some(((), lines));
                         }
                     }
-                    // pactl went away, say PipeWire restarted.
-                    _ => {
-                        lines = None;
-                        tokio::time::sleep(Duration::from_secs(2)).await;
-                        return Some(((), lines));
-                    }
                 }
-            }
-        })
+            },
+        )
         .boxed(),
     )
 }
@@ -301,17 +366,33 @@ pub fn subscription() -> Subscription<Audio> {
 }
 
 async fn wpctl(args: &[&str]) {
-    _ = tokio::process::Command::new("wpctl").args(args).status().await;
+    _ = tokio::process::Command::new("wpctl")
+        .args(args)
+        .status()
+        .await;
 }
 
 pub async fn set_output(level: f32) {
     static LATEST: Latest<f32> = Latest::new();
-    LATEST.send(level, |level| async move { wpctl(&["set-volume", SINK, &format!("{:.2}", level.clamp(0.0, MAX))]).await }).await;
+    LATEST
+        .send(level, |level| async move {
+            wpctl(&["set-volume", SINK, &format!("{:.2}", level.clamp(0.0, MAX))]).await
+        })
+        .await;
 }
 
 pub async fn set_input(level: f32) {
     static LATEST: Latest<f32> = Latest::new();
-    LATEST.send(level, |level| async move { wpctl(&["set-volume", SOURCE, &format!("{:.2}", level.clamp(0.0, MAX))]).await }).await;
+    LATEST
+        .send(level, |level| async move {
+            wpctl(&[
+                "set-volume",
+                SOURCE,
+                &format!("{:.2}", level.clamp(0.0, MAX)),
+            ])
+            .await
+        })
+        .await;
 }
 
 pub async fn set_output_mute(muted: bool) {
@@ -341,24 +422,32 @@ pub async fn set_source(name: String) {
 fn hidden_file(what: &str) -> Option<std::path::PathBuf> {
     let dir = std::env::var_os("XDG_STATE_HOME")
         .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state")))?;
+        .or_else(|| {
+            std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state"))
+        })?;
     Some(dir.join(crate::APP_ID).join(format!("hidden_{what}.json")))
 }
 
 /// Names kept out of sight: `apps` out of the mixer, `players` out of the
 /// media cards.
 pub fn load_hidden(what: &str) -> Vec<String> {
-    hidden_file(what).and_then(|f| std::fs::read(f).ok()).and_then(|d| serde_json::from_slice(&d).ok()).unwrap_or_default()
+    hidden_file(what)
+        .and_then(|f| std::fs::read(f).ok())
+        .and_then(|d| serde_json::from_slice(&d).ok())
+        .unwrap_or_default()
 }
 
 pub fn save_hidden(what: &str, hidden: &[String]) {
     let Some(file) = hidden_file(what) else {
         return;
     };
-    let result = file.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| {
-        let data = serde_json::to_vec(hidden).map_err(std::io::Error::other)?;
-        std::fs::write(&file, data)
-    });
+    let result = file
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| {
+            let data = serde_json::to_vec(hidden).map_err(std::io::Error::other)?;
+            std::fs::write(&file, data)
+        });
     if let Err(err) = result {
         tracing::warn!("cannot keep the hidden apps: {err}");
     }
@@ -370,8 +459,20 @@ mod tests {
 
     #[test]
     fn volumes() {
-        assert_eq!(parse_volume("Volume: 0.50\n"), Some(Volume { level: 0.5, muted: false }));
-        assert_eq!(parse_volume("Volume: 1.20 [MUTED]\n"), Some(Volume { level: 1.2, muted: true }));
+        assert_eq!(
+            parse_volume("Volume: 0.50\n"),
+            Some(Volume {
+                level: 0.5,
+                muted: false
+            })
+        );
+        assert_eq!(
+            parse_volume("Volume: 1.20 [MUTED]\n"),
+            Some(Volume {
+                level: 1.2,
+                muted: true
+            })
+        );
         assert_eq!(parse_volume("nonsense"), None);
     }
 }
@@ -387,7 +488,9 @@ pub fn levels(device: &String) -> impl futures::Stream<Item = f32> + Send + 'sta
 
 /// An app's live level, by one of its streams (a sink input's index),
 /// tagged with the app's name: what the mixer's meters show.
-pub fn stream_levels(of: &(u32, String)) -> impl futures::Stream<Item = (String, f32)> + Send + 'static + use<> {
+pub fn stream_levels(
+    of: &(u32, String),
+) -> impl futures::Stream<Item = (String, f32)> + Send + 'static + use<> {
     use futures::StreamExt;
     let app = of.1.clone();
     peaks(format!("--monitor-stream={}", of.0)).map(move |level| (app.clone(), level))
@@ -397,39 +500,46 @@ pub fn stream_levels(of: &(u32, String)) -> impl futures::Stream<Item = (String,
 fn peaks(target: String) -> impl futures::Stream<Item = f32> + Send + 'static {
     use futures::SinkExt;
     use tokio::io::AsyncReadExt;
-    cosmic::iced::stream::channel(4, move |mut out: futures::channel::mpsc::Sender<f32>| async move {
-        let child = tokio::process::Command::new("parec")
-            .args([
-                target.as_str(),
-                "--format=s16le",
-                "--rate=8000",
-                "--channels=1",
-                "--latency-msec=50",
-                "--stream-name=Peak detect",
-                "--property=stream.monitor=true",
-            ])
-            .env("LC_ALL", "C")
-            .env_remove("LD_LIBRARY_PATH")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .kill_on_drop(true)
-            .spawn();
-        let Ok(mut child) = child else {
-            tracing::warn!("cannot run parec for the level meter");
-            return;
-        };
-        let Some(mut stdout) = child.stdout.take() else {
-            return;
-        };
-        // 400 samples: 50 ms at 8 kHz.
-        let mut buffer = vec![0u8; 800];
-        while stdout.read_exact(&mut buffer).await.is_ok() {
-            let peak = buffer.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]]).unsigned_abs()).max().unwrap_or(0);
-            if out.send(meter(peak)).await.is_err() {
-                break;
+    cosmic::iced::stream::channel(
+        4,
+        move |mut out: futures::channel::mpsc::Sender<f32>| async move {
+            let child = tokio::process::Command::new("parec")
+                .args([
+                    target.as_str(),
+                    "--format=s16le",
+                    "--rate=8000",
+                    "--channels=1",
+                    "--latency-msec=50",
+                    "--stream-name=Peak detect",
+                    "--property=stream.monitor=true",
+                ])
+                .env("LC_ALL", "C")
+                .env_remove("LD_LIBRARY_PATH")
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .kill_on_drop(true)
+                .spawn();
+            let Ok(mut child) = child else {
+                tracing::warn!("cannot run parec for the level meter");
+                return;
+            };
+            let Some(mut stdout) = child.stdout.take() else {
+                return;
+            };
+            // 400 samples: 50 ms at 8 kHz.
+            let mut buffer = vec![0u8; 800];
+            while stdout.read_exact(&mut buffer).await.is_ok() {
+                let peak = buffer
+                    .chunks_exact(2)
+                    .map(|b| i16::from_le_bytes([b[0], b[1]]).unsigned_abs())
+                    .max()
+                    .unwrap_or(0);
+                if out.send(meter(peak)).await.is_err() {
+                    break;
+                }
             }
-        }
-    })
+        },
+    )
 }
 
 /// A sample's peak on a meter: -60 dBFS and below empty, 0 dBFS full.

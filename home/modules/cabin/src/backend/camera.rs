@@ -313,7 +313,8 @@ const VIDIOC_G_CTRL: libc::c_ulong = vidioc(IOC_READ | IOC_WRITE, 0x1b, size_of:
 const VIDIOC_S_CTRL: libc::c_ulong = vidioc(IOC_READ | IOC_WRITE, 0x1c, size_of::<ControlValue>());
 const VIDIOC_QUERYCTRL: libc::c_ulong = vidioc(IOC_READ | IOC_WRITE, 0x24, size_of::<QueryCtrl>());
 const VIDIOC_QUERYMENU: libc::c_ulong = vidioc(IOC_READ | IOC_WRITE, 0x25, size_of::<QueryMenu>());
-const VIDIOC_ENUM_FRAMESIZES: libc::c_ulong = vidioc(IOC_READ | IOC_WRITE, 0x4a, size_of::<FrameSizeEnum>());
+const VIDIOC_ENUM_FRAMESIZES: libc::c_ulong =
+    vidioc(IOC_READ | IOC_WRITE, 0x4a, size_of::<FrameSizeEnum>());
 
 /// One ioctl on an open node, reading and writing `arg`.
 fn ioctl<T: Plain>(node: &File, request: libc::c_ulong, arg: &mut T) -> std::io::Result<()> {
@@ -321,13 +322,21 @@ fn ioctl<T: Plain>(node: &File, request: libc::c_ulong, arg: &mut T) -> std::io:
     // encoded in `request`, so the kernel reads and writes within it, and
     // the fd is open for as long as `node` is.
     let rc = unsafe { libc::ioctl(node.as_raw_fd(), request, arg as *mut T) };
-    if rc < 0 { Err(std::io::Error::last_os_error()) } else { Ok(()) }
+    if rc < 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
 }
 
 /// A node, opened to be asked questions: non-blocking, so a busy camera
 /// still answers, and closed when dropped.
 fn open(node: &str) -> std::io::Result<File> {
-    fs::OpenOptions::new().read(true).write(true).custom_flags(libc::O_NONBLOCK | libc::O_CLOEXEC).open(node)
+    fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(libc::O_NONBLOCK | libc::O_CLOEXEC)
+        .open(node)
 }
 
 /// A NUL-terminated field as text.
@@ -345,7 +354,11 @@ fn tidy(name: &str) -> String {
         return name.to_owned();
     };
     let (head, tail) = (head.trim(), tail.trim());
-    if tail.is_empty() || head.starts_with(tail) || tail.starts_with(head) { head.to_owned() } else { name.to_owned() }
+    if tail.is_empty() || head.starts_with(tail) || tail.starts_with(head) {
+        head.to_owned()
+    } else {
+        name.to_owned()
+    }
 }
 
 pub fn icon_for(name: &str) -> &'static str {
@@ -379,7 +392,11 @@ fn capability(node: &File) -> Option<Capability> {
 
 /// Can capture video, rather than only metadata about it.
 fn captures(cap: &Capability) -> bool {
-    let caps = if cap.capabilities & CAP_DEVICE_CAPS != 0 { cap.device_caps } else { cap.capabilities };
+    let caps = if cap.capabilities & CAP_DEVICE_CAPS != 0 {
+        cap.device_caps
+    } else {
+        cap.capabilities
+    };
     caps & CAP_VIDEO_CAPTURE != 0 && caps != CAP_META_CAPTURE
 }
 
@@ -400,7 +417,9 @@ fn query(node: &File) -> Vec<QueryCtrl> {
     let mut ctrl = QueryCtrl::zeroed();
     ctrl.id = CTRL_FLAG_NEXT_CTRL;
     if ioctl(node, VIDIOC_QUERYCTRL, &mut ctrl).is_err() {
-        for id in (CID_USER_BASE..CID_USER_BASE + 0x40).chain(CID_CAMERA_BASE..CID_CAMERA_BASE + 0x40) {
+        for id in
+            (CID_USER_BASE..CID_USER_BASE + 0x40).chain(CID_CAMERA_BASE..CID_CAMERA_BASE + 0x40)
+        {
             let mut ctrl = QueryCtrl::zeroed();
             ctrl.id = id;
             if ioctl(node, VIDIOC_QUERYCTRL, &mut ctrl).is_ok() {
@@ -423,7 +442,10 @@ fn query(node: &File) -> Vec<QueryCtrl> {
 /// Of a kind the menu can show and set, and not disabled.
 fn settable(ctrl: &QueryCtrl) -> bool {
     ctrl.flags & CTRL_FLAG_DISABLED == 0
-        && matches!(ctrl.kind, CTRL_TYPE_INTEGER | CTRL_TYPE_BOOLEAN | CTRL_TYPE_MENU | CTRL_TYPE_INTEGER_MENU)
+        && matches!(
+            ctrl.kind,
+            CTRL_TYPE_INTEGER | CTRL_TYPE_BOOLEAN | CTRL_TYPE_MENU | CTRL_TYPE_INTEGER_MENU
+        )
 }
 
 /// The names of a menu's values, 0 through its highest.
@@ -448,8 +470,15 @@ fn options(node: &File, ctrl: &QueryCtrl) -> Vec<String> {
 }
 
 fn value(node: &File, ctrl: &QueryCtrl) -> i32 {
-    let mut current = ControlValue { id: ctrl.id, value: 0 };
-    if ioctl(node, VIDIOC_G_CTRL, &mut current).is_ok() { current.value } else { ctrl.default_value }
+    let mut current = ControlValue {
+        id: ctrl.id,
+        value: 0,
+    };
+    if ioctl(node, VIDIOC_G_CTRL, &mut current).is_ok() {
+        current.value
+    } else {
+        ctrl.default_value
+    }
 }
 
 fn control(node: &File, ctrl: &QueryCtrl) -> Option<Control> {
@@ -457,12 +486,30 @@ fn control(node: &File, ctrl: &QueryCtrl) -> Option<Control> {
         return None;
     }
     let kind = match ctrl.kind {
-        CTRL_TYPE_INTEGER => Kind::Integer { min: ctrl.minimum, max: ctrl.maximum, step: ctrl.step.max(1), default: ctrl.default_value },
-        CTRL_TYPE_BOOLEAN => Kind::Boolean { default: ctrl.default_value != 0 },
-        _ => Kind::Menu { options: options(node, ctrl), default: ctrl.default_value },
+        CTRL_TYPE_INTEGER => Kind::Integer {
+            min: ctrl.minimum,
+            max: ctrl.maximum,
+            step: ctrl.step.max(1),
+            default: ctrl.default_value,
+        },
+        CTRL_TYPE_BOOLEAN => Kind::Boolean {
+            default: ctrl.default_value != 0,
+        },
+        _ => Kind::Menu {
+            options: options(node, ctrl),
+            default: ctrl.default_value,
+        },
     };
     let name = text(&ctrl.name);
-    Some(Control { id: ctrl.id, icon: icon_for(&name), name, kind, value: value(node, ctrl), inactive: ctrl.flags & CTRL_FLAG_INACTIVE != 0, read_only: ctrl.flags & CTRL_FLAG_READ_ONLY != 0 })
+    Some(Control {
+        id: ctrl.id,
+        icon: icon_for(&name),
+        name,
+        kind,
+        value: value(node, ctrl),
+        inactive: ctrl.flags & CTRL_FLAG_INACTIVE != 0,
+        read_only: ctrl.flags & CTRL_FLAG_READ_ONLY != 0,
+    })
 }
 
 /// Where the camera is attached. A USB device says whether it's soldered
@@ -491,13 +538,22 @@ fn bus(driver: &str, device: &Path, name: &str) -> Bus {
             }
         }
         // The root hub: the end of the USB part of the path.
-        if d.file_name().is_some_and(|n| n.to_string_lossy().starts_with("usb")) {
+        if d.file_name()
+            .is_some_and(|n| n.to_string_lossy().starts_with("usb"))
+        {
             break;
         }
         dir = d.parent();
     }
     let names = names.to_lowercase();
-    if ["laptop", "integrated", "internal", "built-in", "framework"].iter().any(|word| names.contains(word)) { Bus::Builtin } else { Bus::Usb }
+    if ["laptop", "integrated", "internal", "built-in", "framework"]
+        .iter()
+        .any(|word| names.contains(word))
+    {
+        Bus::Builtin
+    } else {
+        Bus::Usb
+    }
 }
 
 /// Every `/dev/video*` node open in some process, with who holds it.
@@ -508,7 +564,11 @@ fn holders() -> Vec<(String, User)> {
         return found;
     };
     for entry in procs.flatten() {
-        let Some(pid) = entry.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else {
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|n| n.parse::<u32>().ok())
+        else {
             continue;
         };
         if pid == me {
@@ -525,7 +585,9 @@ fn holders() -> Vec<(String, User)> {
             let Some(target) = target.to_str().filter(|t| t.starts_with("/dev/video")) else {
                 continue;
             };
-            let name = name.get_or_insert_with(|| super::privacy::process_name(pid)).clone();
+            let name = name
+                .get_or_insert_with(|| super::privacy::process_name(pid))
+                .clone();
             found.push((target.to_owned(), User { pid, name }));
         }
     }
@@ -535,7 +597,9 @@ fn holders() -> Vec<(String, User)> {
 #[allow(dead_code)]
 fn process_name(pid: u32) -> String {
     let proc = PathBuf::from(format!("/proc/{pid}"));
-    let comm = fs::read_to_string(proc.join("comm")).map(|c| c.trim().to_owned()).unwrap_or_default();
+    let comm = fs::read_to_string(proc.join("comm"))
+        .map(|c| c.trim().to_owned())
+        .unwrap_or_default();
     if !comm.is_empty() {
         return comm;
     }
@@ -563,13 +627,21 @@ fn state_file() -> Option<PathBuf> {
 /// remembering it when it's here.
 fn privacy_switch(builtin_now: bool) -> bool {
     let file = state_file();
-    let seen: Seen = file.as_ref().and_then(|f| fs::read(f).ok()).and_then(|d| serde_json::from_slice(&d).ok()).unwrap_or_default();
+    let seen: Seen = file
+        .as_ref()
+        .and_then(|f| fs::read(f).ok())
+        .and_then(|d| serde_json::from_slice(&d).ok())
+        .unwrap_or_default();
     if builtin_now && !seen.builtin_seen {
         if let Some(file) = file {
-            let result = file.parent().map_or(Ok(()), fs::create_dir_all).and_then(|()| {
-                let data = serde_json::to_vec(&Seen { builtin_seen: true }).map_err(std::io::Error::other)?;
-                fs::write(&file, data)
-            });
+            let result = file
+                .parent()
+                .map_or(Ok(()), fs::create_dir_all)
+                .and_then(|()| {
+                    let data = serde_json::to_vec(&Seen { builtin_seen: true })
+                        .map_err(std::io::Error::other)?;
+                    fs::write(&file, data)
+                });
             if let Err(err) = result {
                 tracing::warn!("cannot remember the camera: {err}");
             }
@@ -594,16 +666,23 @@ fn groups() -> Vec<Group> {
     };
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        let Some(index) = name.strip_prefix("video").and_then(|n| n.parse::<u32>().ok()) else {
+        let Some(index) = name
+            .strip_prefix("video")
+            .and_then(|n| n.parse::<u32>().ok())
+        else {
             continue;
         };
         let sysfs = entry.path();
         // A virtual device has no device behind it: it stands alone.
-        let device = fs::canonicalize(sysfs.join("device")).or_else(|_| fs::canonicalize(&sysfs)).unwrap_or(sysfs.clone());
+        let device = fs::canonicalize(sysfs.join("device"))
+            .or_else(|_| fs::canonicalize(&sysfs))
+            .unwrap_or(sysfs.clone());
         let group = groups.entry(device.clone()).or_insert_with(|| Group {
             device,
             nodes: Vec::new(),
-            name: fs::read_to_string(sysfs.join("name")).map(|n| n.trim().to_owned()).unwrap_or_default(),
+            name: fs::read_to_string(sysfs.join("name"))
+                .map(|n| n.trim().to_owned())
+                .unwrap_or_default(),
         });
         group.nodes.push((index, format!("/dev/video{index}")));
     }
@@ -641,7 +720,9 @@ fn forget(node: &str) {
 fn camera(group: &Group, holders: &[(String, User)]) -> Option<Camera> {
     let users = |camera: &mut Camera| {
         for (held, user) in holders {
-            if group.nodes.iter().any(|(_, n)| n == held) && !camera.users.iter().any(|u| u.pid == user.pid) {
+            if group.nodes.iter().any(|(_, n)| n == held)
+                && !camera.users.iter().any(|u| u.pid == user.pid)
+            {
                 camera.users.push(user.clone());
             }
         }
@@ -663,16 +744,25 @@ fn camera(group: &Group, holders: &[(String, User)]) -> Option<Camera> {
     })?;
     let driver = text(&cap.driver);
     let card = tidy(&text(&cap.card));
-    let name = if card.is_empty() { tidy(&group.name) } else { card };
+    let name = if card.is_empty() {
+        tidy(&group.name)
+    } else {
+        card
+    };
     let mut camera = Camera {
         bus: bus(&driver, &group.device, &name),
         id,
         name,
         driver,
         resolution: resolution(&file),
-        frame_sizes: preview_format(&formats(&file)).map(|f| frame_sizes(&file, f)).unwrap_or_default(),
+        frame_sizes: preview_format(&formats(&file))
+            .map(|f| frame_sizes(&file, f))
+            .unwrap_or_default(),
         users: Vec::new(),
-        controls: query(&file).iter().filter_map(|ctrl| control(&file, ctrl)).collect(),
+        controls: query(&file)
+            .iter()
+            .filter_map(|ctrl| control(&file, ctrl))
+            .collect(),
         node,
     };
     if let Ok(mut remembered) = REMEMBERED.lock() {
@@ -685,11 +775,17 @@ fn camera(group: &Group, holders: &[(String, User)]) -> Option<Camera> {
 
 fn read() -> Cameras {
     let holders = holders();
-    let mut list: Vec<Camera> = groups().iter().filter_map(|group| camera(group, &holders)).collect();
+    let mut list: Vec<Camera> = groups()
+        .iter()
+        .filter_map(|group| camera(group, &holders))
+        .collect();
     // Built-in first, then by node.
     list.sort_by_key(|c| (c.bus != Bus::Builtin, c.node.clone()));
     let builtin_now = list.iter().any(|c| c.bus == Bus::Builtin);
-    Cameras { list, privacy_switch: privacy_switch(builtin_now) }
+    Cameras {
+        list,
+        privacy_switch: privacy_switch(builtin_now),
+    }
 }
 
 pub async fn now() -> Option<Cameras> {
@@ -711,7 +807,10 @@ pub async fn set_control(node: String, id: u32, value: i32) {
     static LATEST: Latest<(String, u32, i32)> = Latest::new();
     LATEST
         .send((node, id, value), |(node, id, value)| async move {
-            let result = tokio::task::spawn_blocking(move || set(&node, id, value).map_err(|err| format!("on {node}: {err}"))).await;
+            let result = tokio::task::spawn_blocking(move || {
+                set(&node, id, value).map_err(|err| format!("on {node}: {err}"))
+            })
+            .await;
             if let Err(err) = result.unwrap_or_else(|err| Err(err.to_string())) {
                 tracing::warn!("cannot set camera control {id:#x} {err}");
             }
@@ -737,7 +836,9 @@ fn formats(node: &File) -> Vec<u32> {
 /// The pixel format the preview streams in: MJPEG if the device has it,
 /// else YUYV.
 fn preview_format(formats: &[u32]) -> Option<u32> {
-    [PIX_FMT_MJPEG, PIX_FMT_YUYV].into_iter().find(|f| formats.contains(f))
+    [PIX_FMT_MJPEG, PIX_FMT_YUYV]
+        .into_iter()
+        .find(|f| formats.contains(f))
 }
 
 /// The sizes a node captures `pixelformat` in, smallest first. For a device
@@ -757,7 +858,12 @@ fn frame_sizes(node: &File, pixelformat: u32) -> Vec<(u32, u32)> {
             continue;
         }
         let [min_w, max_w, _, min_h, max_h, _] = entry.size;
-        sizes.extend(COMMON_SIZES.into_iter().chain([(max_w, max_h)]).filter(|(w, h)| (min_w..=max_w).contains(w) && (min_h..=max_h).contains(h)));
+        sizes.extend(
+            COMMON_SIZES
+                .into_iter()
+                .chain([(max_w, max_h)])
+                .filter(|(w, h)| (min_w..=max_w).contains(w) && (min_h..=max_h).contains(h)),
+        );
         break;
     }
     sizes.retain(|(w, h)| *w > 0 && *h > 0);
@@ -768,12 +874,20 @@ fn frame_sizes(node: &File, pixelformat: u32) -> Vec<(u32, u32)> {
 
 /// Whether a frame is waiting on the node, within `timeout_ms`.
 fn ready(node: &File, timeout_ms: i32) -> std::io::Result<bool> {
-    let mut poll = libc::pollfd { fd: node.as_raw_fd(), events: libc::POLLIN, revents: 0 };
+    let mut poll = libc::pollfd {
+        fd: node.as_raw_fd(),
+        events: libc::POLLIN,
+        revents: 0,
+    };
     // SAFETY: one pollfd, as the count says, live for the call.
     let rc = unsafe { libc::poll(&mut poll, 1, timeout_ms) };
     if rc < 0 {
         let err = std::io::Error::last_os_error();
-        return if err.kind() == std::io::ErrorKind::Interrupted { Ok(false) } else { Err(err) };
+        return if err.kind() == std::io::ErrorKind::Interrupted {
+            Ok(false)
+        } else {
+            Err(err)
+        };
     }
     Ok(rc > 0)
 }
@@ -790,7 +904,16 @@ impl Mapping {
         let offset = (buffer.m & 0xffff_ffff) as libc::off_t;
         // SAFETY: a shared mapping of the driver's buffer at the offset and
         // length it reported, unmapped in Drop and never touched after.
-        let ptr = unsafe { libc::mmap(std::ptr::null_mut(), len, libc::PROT_READ | libc::PROT_WRITE, libc::MAP_SHARED, node.as_raw_fd(), offset) };
+        let ptr = unsafe {
+            libc::mmap(
+                std::ptr::null_mut(),
+                len,
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_SHARED,
+                node.as_raw_fd(),
+                offset,
+            )
+        };
         if ptr == libc::MAP_FAILED {
             return Err(std::io::Error::last_os_error());
         }
@@ -830,7 +953,8 @@ impl Session {
     /// it's busy or has neither.
     fn start(path: &str, size: Option<(u32, u32)>) -> std::io::Result<Self> {
         let node = open(path)?;
-        let wanted = preview_format(&formats(&node)).ok_or_else(|| std::io::Error::other("neither MJPEG nor YUYV"))?;
+        let wanted = preview_format(&formats(&node))
+            .ok_or_else(|| std::io::Error::other("neither MJPEG nor YUYV"))?;
         let (width, height) = size.unwrap_or((PREVIEW_WIDTH, PREVIEW_HEIGHT));
         let mut format = Format::zeroed();
         format.kind = BUF_TYPE_VIDEO_CAPTURE;
@@ -899,20 +1023,31 @@ impl Session {
     /// The newest frame, within the timeout, or nothing for a frame the
     /// driver marked bad. Older frames waiting are skipped.
     fn frame(&mut self) -> std::io::Result<Option<Frame>> {
-        let mut buffer = self.dequeue(FRAME_TIMEOUT_MS)?.ok_or_else(|| std::io::Error::new(std::io::ErrorKind::TimedOut, "no frame"))?;
+        let mut buffer = self
+            .dequeue(FRAME_TIMEOUT_MS)?
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::TimedOut, "no frame"))?;
         while let Some(newer) = self.dequeue(0)? {
             self.requeue(buffer.index)?;
             buffer = newer;
         }
-        let frame = if buffer.flags & BUF_FLAG_ERROR != 0 { None } else { self.decode(&buffer) };
+        let frame = if buffer.flags & BUF_FLAG_ERROR != 0 {
+            None
+        } else {
+            self.decode(&buffer)
+        };
         self.requeue(buffer.index)?;
         Ok(frame)
     }
 
     fn decode(&self, buffer: &Buffer) -> Option<Frame> {
-        let data = self.mappings.get(buffer.index as usize)?.bytes(buffer.bytesused as usize);
+        let data = self
+            .mappings
+            .get(buffer.index as usize)?
+            .bytes(buffer.bytesused as usize);
         let image = if self.pixelformat == PIX_FMT_MJPEG {
-            image::load_from_memory_with_format(data, image::ImageFormat::Jpeg).ok()?.into_rgba8()
+            image::load_from_memory_with_format(data, image::ImageFormat::Jpeg)
+                .ok()?
+                .into_rgba8()
         } else {
             yuyv_to_rgba(data, self.width, self.height, self.bytesperline as usize)?
         };
@@ -950,18 +1085,34 @@ fn yuv_to_rgba(y: u8, u: u8, v: u8) -> [u8; 4] {
     let d = i32::from(u) - 128;
     let e = i32::from(v) - 128;
     let channel = |value: i32| ((value + 128) >> 8).clamp(0, 255) as u8;
-    [channel(c + 409 * e), channel(c - 100 * d - 208 * e), channel(c + 516 * d), 255]
+    [
+        channel(c + 409 * e),
+        channel(c - 100 * d - 208 * e),
+        channel(c + 516 * d),
+        255,
+    ]
 }
 
 /// A frame to send on, no wider than the preview wants.
 fn frame_from(image: image::RgbaImage) -> Frame {
     let image = if image.width() > PREVIEW_MAX_WIDTH {
-        let height = (u64::from(image.height()) * u64::from(PREVIEW_MAX_WIDTH) / u64::from(image.width())).max(1) as u32;
-        image::imageops::resize(&image, PREVIEW_MAX_WIDTH, height, image::imageops::FilterType::Triangle)
+        let height = (u64::from(image.height()) * u64::from(PREVIEW_MAX_WIDTH)
+            / u64::from(image.width()))
+        .max(1) as u32;
+        image::imageops::resize(
+            &image,
+            PREVIEW_MAX_WIDTH,
+            height,
+            image::imageops::FilterType::Triangle,
+        )
     } else {
         image
     };
-    Frame { width: image.width(), height: image.height(), rgba: Arc::new(image.into_raw()) }
+    Frame {
+        width: image.width(),
+        height: image.height(),
+        rgba: Arc::new(image.into_raw()),
+    }
 }
 
 /// Waits `how_long` unless `out` closes first; whether it's still open.
@@ -1022,10 +1173,15 @@ fn stream_frames(node: String, size: Option<(u32, u32)>, mut out: mpsc::Sender<F
 /// pictures are shrunk to fit the preview anyway. Nothing while the device
 /// can't be streamed (busy, no usable format): it's tried again every 2 s.
 /// The camera is released promptly once the stream is dropped.
-pub fn preview(request: &(String, Option<(u32, u32)>)) -> impl Stream<Item = Frame> + Send + 'static + use<> {
+pub fn preview(
+    request: &(String, Option<(u32, u32)>),
+) -> impl Stream<Item = Frame> + Send + 'static + use<> {
     let (out, frames) = mpsc::channel(1);
     let (node, size) = request.clone();
-    if let Err(err) = std::thread::Builder::new().name("camera-preview".to_owned()).spawn(move || stream_frames(node, size, out)) {
+    if let Err(err) = std::thread::Builder::new()
+        .name("camera-preview".to_owned())
+        .spawn(move || stream_frames(node, size, out))
+    {
         tracing::warn!("cannot start the camera preview: {err}");
     }
     frames
@@ -1037,10 +1193,16 @@ pub async fn reset_controls(node: String) {
     let reset = move || {
         forget(&node);
         let file = open(&node)?;
-        let mut ctrls: Vec<QueryCtrl> = query(&file).into_iter().filter(|c| settable(c) && c.flags & CTRL_FLAG_READ_ONLY == 0).collect();
+        let mut ctrls: Vec<QueryCtrl> = query(&file)
+            .into_iter()
+            .filter(|c| settable(c) && c.flags & CTRL_FLAG_READ_ONLY == 0)
+            .collect();
         ctrls.sort_by_key(|c| c.kind == CTRL_TYPE_INTEGER);
         for ctrl in ctrls {
-            let mut set = ControlValue { id: ctrl.id, value: ctrl.default_value };
+            let mut set = ControlValue {
+                id: ctrl.id,
+                value: ctrl.default_value,
+            };
             if let Err(err) = ioctl(&file, VIDIOC_S_CTRL, &mut set) {
                 tracing::debug!("cannot reset camera control {:#x}: {err}", ctrl.id);
             }
@@ -1086,9 +1248,24 @@ mod tests {
         let data = [235, 128, 16, 128, 81, 90, 81, 240, 0, 0, 0, 0];
         let image = yuyv_to_rgba(&data, 4, 1, 12).unwrap();
         let pixels: Vec<[u8; 4]> = image.pixels().map(|p| p.0).collect();
-        assert_eq!(pixels, [[255, 255, 255, 255], [0, 0, 0, 255], [255, 0, 0, 255], [255, 0, 0, 255]]);
-        assert!(yuyv_to_rgba(&data[..7], 4, 1, 0).is_none(), "a short buffer is no picture");
-        assert_eq!(frame_from(image).width, 4, "a small picture is left as it is");
+        assert_eq!(
+            pixels,
+            [
+                [255, 255, 255, 255],
+                [0, 0, 0, 255],
+                [255, 0, 0, 255],
+                [255, 0, 0, 255]
+            ]
+        );
+        assert!(
+            yuyv_to_rgba(&data[..7], 4, 1, 0).is_none(),
+            "a short buffer is no picture"
+        );
+        assert_eq!(
+            frame_from(image).width,
+            4,
+            "a small picture is left as it is"
+        );
     }
 
     #[test]
@@ -1110,22 +1287,46 @@ mod tests {
         let started = Instant::now();
         let mut session = Session::start(&node, None).expect("the camera streams");
         let fourcc = String::from_utf8_lossy(&session.pixelformat.to_le_bytes()).into_owned();
-        println!("{fourcc} {}x{} (stride {}) started in {:?}", session.width, session.height, session.bytesperline, started.elapsed());
+        println!(
+            "{fourcc} {}x{} (stride {}) started in {:?}",
+            session.width,
+            session.height,
+            session.bytesperline,
+            started.elapsed()
+        );
         for _ in 0..3 {
             let started = Instant::now();
             let frame = session.frame().expect("a frame comes");
             if let (Some(f), Ok(dir)) = (frame.as_ref(), std::env::var("QS_FRAME_DIR")) {
-                let _ = image::RgbaImage::from_raw(f.width, f.height, f.rgba.as_ref().clone()).map(|img| img.save(format!("{dir}/frame.png")));
+                let _ = image::RgbaImage::from_raw(f.width, f.height, f.rgba.as_ref().clone())
+                    .map(|img| img.save(format!("{dir}/frame.png")));
             }
-            println!("frame {:?} in {:?}", frame.map(|f| (f.width, f.height, f.rgba.len())), started.elapsed());
+            println!(
+                "frame {:?} in {:?}",
+                frame.map(|f| (f.width, f.height, f.rgba.len())),
+                started.elapsed()
+            );
         }
         drop(session);
         let started = Instant::now();
-        let frames = futures::executor::block_on(preview(&(node.clone(), Some((1280, 720)))).take(45).collect::<Vec<Frame>>());
+        let frames = futures::executor::block_on(
+            preview(&(node.clone(), Some((1280, 720))))
+                .take(45)
+                .collect::<Vec<Frame>>(),
+        );
         if let (Some(f), Ok(dir)) = (frames.last(), std::env::var("QS_FRAME_DIR")) {
-            let _ = image::RgbaImage::from_raw(f.width, f.height, f.rgba.as_ref().clone()).map(|img| img.save(format!("{dir}/frame-late.png")));
+            let _ = image::RgbaImage::from_raw(f.width, f.height, f.rgba.as_ref().clone())
+                .map(|img| img.save(format!("{dir}/frame-late.png")));
         }
-        println!("{} frames through preview at 1280x720 in {:?}: {:?}", frames.len(), started.elapsed(), frames.iter().map(|f| (f.width, f.height)).collect::<Vec<_>>());
+        println!(
+            "{} frames through preview at 1280x720 in {:?}: {:?}",
+            frames.len(),
+            started.elapsed(),
+            frames
+                .iter()
+                .map(|f| (f.width, f.height))
+                .collect::<Vec<_>>()
+        );
         std::thread::sleep(Duration::from_millis(300));
         let open: Vec<String> = fs::read_dir("/proc/self/fd")
             .unwrap()
@@ -1135,16 +1336,25 @@ mod tests {
             .filter(|t| t.starts_with("/dev/video"))
             .collect();
         println!("video nodes still open: {open:?}");
-        assert!(open.is_empty(), "the camera is closed once the preview is dropped");
+        assert!(
+            open.is_empty(),
+            "the camera is closed once the preview is dropped"
+        );
     }
 
     #[test]
     fn names_are_tidied() {
         assert_eq!(tidy("Laptop Camera: Laptop Camera"), "Laptop Camera");
         assert_eq!(tidy("Integrated Camera: Integrated C"), "Integrated Camera");
-        assert_eq!(tidy("Laptop Webcam Module (2nd Gen):"), "Laptop Webcam Module (2nd Gen)");
+        assert_eq!(
+            tidy("Laptop Webcam Module (2nd Gen):"),
+            "Laptop Webcam Module (2nd Gen)"
+        );
         assert_eq!(tidy("  HD Pro Webcam C920 "), "HD Pro Webcam C920");
-        assert_eq!(tidy("Integrated Camera: Integrated I"), "Integrated Camera: Integrated I");
+        assert_eq!(
+            tidy("Integrated Camera: Integrated I"),
+            "Integrated Camera: Integrated I"
+        );
         assert_eq!(tidy(""), "");
     }
 
@@ -1188,11 +1398,19 @@ mod tests {
         println!("first read in {:?}", started.elapsed());
         let started = std::time::Instant::now();
         let again = read();
-        println!("second read in {:?}, same: {}", started.elapsed(), again == cameras);
+        println!(
+            "second read in {:?}, same: {}",
+            started.elapsed(),
+            again == cameras
+        );
         std::thread::sleep(Duration::from_secs(3));
         let started = std::time::Instant::now();
         let asleep = read();
-        println!("third read in {:?}, same: {}", started.elapsed(), asleep == cameras);
+        println!(
+            "third read in {:?}, same: {}",
+            started.elapsed(),
+            asleep == cameras
+        );
     }
 }
 
@@ -1210,11 +1428,20 @@ mod size_tests {
             let started = Instant::now();
             match Session::start(&node, size) {
                 Ok(mut session) => {
-                    println!("{size:?}: started {}x{} in {:?}", session.width, session.height, started.elapsed());
+                    println!(
+                        "{size:?}: started {}x{} in {:?}",
+                        session.width,
+                        session.height,
+                        started.elapsed()
+                    );
                     for _ in 0..3 {
                         let started = Instant::now();
                         match session.frame() {
-                            Ok(frame) => println!("  frame {:?} in {:?}", frame.map(|f| (f.width, f.height)), started.elapsed()),
+                            Ok(frame) => println!(
+                                "  frame {:?} in {:?}",
+                                frame.map(|f| (f.width, f.height)),
+                                started.elapsed()
+                            ),
                             Err(err) => println!("  frame error: {err}"),
                         }
                     }

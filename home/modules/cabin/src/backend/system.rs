@@ -132,7 +132,11 @@ pub fn set_fast(fast: bool) {
 }
 
 fn interval() -> Duration {
-    if FAST.load(Ordering::Relaxed) { Duration::from_millis(1500) } else { Duration::from_secs(2) }
+    if FAST.load(Ordering::Relaxed) {
+        Duration::from_millis(1500)
+    } else {
+        Duration::from_secs(2)
+    }
 }
 
 /// "3.8 GB", "412 MB", "9 KB": decimal units, one decimal from GB up.
@@ -214,13 +218,26 @@ fn cpu_percent(prev: (u64, u64), now: (u64, u64)) -> f32 {
 
 fn cpu_model() -> String {
     read("/proc/cpuinfo")
-        .and_then(|info| info.lines().find(|l| l.starts_with("model name")).and_then(|l| l.split_once(':')).map(|(_, m)| m.trim().to_owned()))
+        .and_then(|info| {
+            info.lines()
+                .find(|l| l.starts_with("model name"))
+                .and_then(|l| l.split_once(':'))
+                .map(|(_, m)| m.trim().to_owned())
+        })
         .unwrap_or_default()
 }
 
 fn cpu_threads() -> usize {
-    let counted = read("/proc/cpuinfo").map(|info| info.lines().filter(|l| l.starts_with("processor")).count()).unwrap_or(0);
-    if counted > 0 { counted } else { std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1) }
+    let counted = read("/proc/cpuinfo")
+        .map(|info| info.lines().filter(|l| l.starts_with("processor")).count())
+        .unwrap_or(0);
+    if counted > 0 {
+        counted
+    } else {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+    }
 }
 
 // Memory and disk
@@ -232,7 +249,11 @@ fn memory() -> Memory {
     let mut fields: HashMap<&str, u64> = HashMap::new();
     for line in info.lines() {
         if let Some((key, rest)) = line.split_once(':') {
-            if let Some(kb) = rest.split_whitespace().next().and_then(|v| v.parse::<u64>().ok()) {
+            if let Some(kb) = rest
+                .split_whitespace()
+                .next()
+                .and_then(|v| v.parse::<u64>().ok())
+            {
                 fields.insert(key, kb * 1024);
             }
         }
@@ -291,9 +312,14 @@ fn interface_kind(name: &str, path: &Path) -> Kind {
         Kind::Wifi
     } else if name.starts_with("lo") {
         Kind::Loopback
-    } else if path.join("bridge").exists() || name.starts_with("docker") || name.starts_with("br-") {
+    } else if path.join("bridge").exists() || name.starts_with("docker") || name.starts_with("br-")
+    {
         Kind::Bridge
-    } else if ["tailscale", "wg", "tun", "tap"].iter().any(|p| name.starts_with(p)) || path.join("tun_flags").exists() {
+    } else if ["tailscale", "wg", "tun", "tap"]
+        .iter()
+        .any(|p| name.starts_with(p))
+        || path.join("tun_flags").exists()
+    {
         Kind::Vpn
     } else if path.join("device").exists() {
         Kind::Ethernet
@@ -315,10 +341,15 @@ fn ipv4_addresses() -> HashMap<String, String> {
         let mut cur = list;
         while !cur.is_null() {
             let ifa = &*cur;
-            if !ifa.ifa_addr.is_null() && i32::from((*ifa.ifa_addr).sa_family) == libc::AF_INET && !ifa.ifa_name.is_null() {
+            if !ifa.ifa_addr.is_null()
+                && i32::from((*ifa.ifa_addr).sa_family) == libc::AF_INET
+                && !ifa.ifa_name.is_null()
+            {
                 let sin = &*(ifa.ifa_addr as *const libc::sockaddr_in);
                 let ip = std::net::Ipv4Addr::from(u32::from_be(sin.sin_addr.s_addr));
-                let name = std::ffi::CStr::from_ptr(ifa.ifa_name).to_string_lossy().into_owned();
+                let name = std::ffi::CStr::from_ptr(ifa.ifa_name)
+                    .to_string_lossy()
+                    .into_owned();
                 out.entry(name).or_insert_with(|| ip.to_string());
             }
             cur = ifa.ifa_next;
@@ -387,15 +418,39 @@ impl Sensors {
             .filter_map(|entry| entry.ok())
             .filter_map(|entry| Some((read(entry.path().join("name"))?, entry.path())))
             .collect();
-        let named = |name: &str| hwmons.iter().find(|(n, _)| n == name).map(|(_, p)| p.clone());
-        let cpu_temp = ["k10temp", "coretemp", "acpitz"].iter().find_map(|n| named(n)).map(|p| p.join("temp1_input")).filter(|p| p.exists());
+        let named = |name: &str| {
+            hwmons
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, p)| p.clone())
+        };
+        let cpu_temp = ["k10temp", "coretemp", "acpitz"]
+            .iter()
+            .find_map(|n| named(n))
+            .map(|p| p.join("temp1_input"))
+            .filter(|p| p.exists());
         let fan = named("cros_ec")
             .map(|p| p.join("fan1_input"))
             .filter(|p| p.exists())
-            .or_else(|| hwmons.iter().map(|(_, p)| p.join("fan1_input")).find(|p| p.exists()));
-        let gpus = hwmons.iter().filter(|(n, _)| n == "amdgpu").map(|(_, p)| p.clone()).collect();
-        let rapl = Some(PathBuf::from("/sys/class/powercap/intel-rapl:0/energy_uj")).filter(|p| read_u64(p).is_some());
-        Self { cpu_temp, fan, gpus, rapl }
+            .or_else(|| {
+                hwmons
+                    .iter()
+                    .map(|(_, p)| p.join("fan1_input"))
+                    .find(|p| p.exists())
+            });
+        let gpus = hwmons
+            .iter()
+            .filter(|(n, _)| n == "amdgpu")
+            .map(|(_, p)| p.clone())
+            .collect();
+        let rapl = Some(PathBuf::from("/sys/class/powercap/intel-rapl:0/energy_uj"))
+            .filter(|p| read_u64(p).is_some());
+        Self {
+            cpu_temp,
+            fan,
+            gpus,
+            rapl,
+        }
     }
 
     /// The temperature of an awake GPU. A suspended one is left alone:
@@ -410,17 +465,23 @@ impl Sensors {
 
 /// The battery's drain while discharging, in watts.
 fn battery_draw() -> Option<f32> {
-    fs::read_dir("/sys/class/power_supply").ok()?.filter_map(|entry| entry.ok()).map(|entry| entry.path()).find_map(|bat| {
-        if !bat.file_name()?.to_str()?.starts_with("BAT") || read(bat.join("status")).as_deref() != Some("Discharging") {
-            return None;
-        }
-        if let Some(uw) = read_u64(bat.join("power_now")) {
-            return Some(uw as f32 / 1e6);
-        }
-        let ua = read_u64(bat.join("current_now"))? as f64;
-        let uv = read_u64(bat.join("voltage_now"))? as f64;
-        Some((ua * uv / 1e12) as f32)
-    })
+    fs::read_dir("/sys/class/power_supply")
+        .ok()?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .find_map(|bat| {
+            if !bat.file_name()?.to_str()?.starts_with("BAT")
+                || read(bat.join("status")).as_deref() != Some("Discharging")
+            {
+                return None;
+            }
+            if let Some(uw) = read_u64(bat.join("power_now")) {
+                return Some(uw as f32 / 1e6);
+            }
+            let ua = read_u64(bat.join("current_now"))? as f64;
+            let uv = read_u64(bat.join("voltage_now"))? as f64;
+            Some((ua * uv / 1e12) as f32)
+        })
 }
 
 // Sampling
@@ -471,18 +532,30 @@ impl Sampler {
             return Vec::new();
         }
         // SAFETY: sysconf only reads a constant.
-        let (hertz, page) = unsafe { (libc::sysconf(libc::_SC_CLK_TCK), libc::sysconf(libc::_SC_PAGESIZE)) };
+        let (hertz, page) = unsafe {
+            (
+                libc::sysconf(libc::_SC_CLK_TCK),
+                libc::sysconf(libc::_SC_PAGESIZE),
+            )
+        };
         let (hertz, page) = (hertz.max(1) as f64, page.max(1) as u64);
         let whole = elapsed * hertz * self.threads.max(1) as f64;
         let seeded = !self.ticks.is_empty();
         let mut ticks = HashMap::new();
         let mut names = HashMap::new();
         let mut programs: HashMap<String, Process> = HashMap::new();
-        for entry in fs::read_dir("/proc").into_iter().flatten().filter_map(Result::ok) {
+        for entry in fs::read_dir("/proc")
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+        {
             let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
                 continue;
             };
-            let Some((comm, used, rss)) = read(entry.path().join("stat")).as_deref().and_then(parse_pid_stat) else {
+            let Some((comm, used, rss)) = read(entry.path().join("stat"))
+                .as_deref()
+                .and_then(parse_pid_stat)
+            else {
                 continue;
             };
             // Kernel threads hold no memory of their own.
@@ -494,9 +567,15 @@ impl Sampler {
                 _ => 0.0,
             };
             ticks.insert(pid, used);
-            let name = self.names.remove(&pid).unwrap_or_else(|| program_name(&entry.path(), &comm));
+            let name = self
+                .names
+                .remove(&pid)
+                .unwrap_or_else(|| program_name(&entry.path(), &comm));
             names.insert(pid, name.clone());
-            let program = programs.entry(name.clone()).or_insert_with(|| Process { name, ..Process::default() });
+            let program = programs.entry(name.clone()).or_insert_with(|| Process {
+                name,
+                ..Process::default()
+            });
             program.cpu += cpu as f32;
             program.memory += rss * page;
         }
@@ -513,7 +592,8 @@ impl Sampler {
         let elapsed = now.duration_since(self.at).as_secs_f64().max(1e-3);
         self.at = now;
 
-        let stat = read("/proc/stat").and_then(|s| parse_stat(s.lines().next().unwrap_or_default()));
+        let stat =
+            read("/proc/stat").and_then(|s| parse_stat(s.lines().next().unwrap_or_default()));
         let percent = match (self.stat, stat) {
             (Some(prev), Some(now)) => cpu_percent(prev, now),
             _ => 0.0,
@@ -525,7 +605,9 @@ impl Sampler {
 
         let energy = self.sensors.rapl.as_ref().and_then(read_u64);
         let cpu_w = match (self.energy_uj, energy) {
-            (Some(prev), Some(now)) if now >= prev => Some(((now - prev) as f64 / 1e6 / elapsed) as f32),
+            (Some(prev), Some(now)) if now >= prev => {
+                Some(((now - prev) as f64 / 1e6 / elapsed) as f32)
+            }
             _ => None,
         };
         self.energy_uj = energy;
@@ -541,8 +623,16 @@ impl Sampler {
             memory: memory(),
             disk: disk(),
             network,
-            draw: Draw { total_w: battery_draw(), cpu_w },
-            fan_rpm: self.sensors.fan.as_ref().and_then(read_u64).map(|rpm| rpm as u32),
+            draw: Draw {
+                total_w: battery_draw(),
+                cpu_w,
+            },
+            fan_rpm: self
+                .sensors
+                .fan
+                .as_ref()
+                .and_then(read_u64)
+                .map(|rpm| rpm as u32),
             gpu_temp_c: self.sensors.gpu_temp(),
             nixos: super::nixos::read(),
             processes: self.processes(elapsed),
@@ -554,7 +644,11 @@ impl Sampler {
         let addresses = ipv4_addresses();
         let mut counters = Counters::new();
         let mut interfaces = Vec::new();
-        for entry in fs::read_dir("/sys/class/net").into_iter().flatten().filter_map(|e| e.ok()) {
+        for entry in fs::read_dir("/sys/class/net")
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.ok())
+        {
             let name = entry.file_name().to_string_lossy().into_owned();
             let path = entry.path();
             let kind = interface_kind(&name, &path);
@@ -576,7 +670,10 @@ impl Sampler {
                 up,
                 down_rate: rx.saturating_sub(prev_rx) as f64 / elapsed,
                 up_rate: tx.saturating_sub(prev_tx) as f64 / elapsed,
-                speed_mbps: read(path.join("speed")).and_then(|s| s.parse::<i64>().ok()).filter(|s| *s > 0).map(|s| s as u32),
+                speed_mbps: read(path.join("speed"))
+                    .and_then(|s| s.parse::<i64>().ok())
+                    .filter(|s| *s > 0)
+                    .map(|s| s as u32),
                 name,
             });
         }
@@ -586,25 +683,49 @@ impl Sampler {
             rank(a).cmp(&rank(b)).then_with(|| a.name.cmp(&b.name))
         });
 
-        let (down_rate, up_rate) = interfaces.first().filter(|i| Some(&i.name) == active.as_ref()).map(|i| (i.down_rate, i.up_rate)).unwrap_or((0.0, 0.0));
+        let (down_rate, up_rate) = interfaces
+            .first()
+            .filter(|i| Some(&i.name) == active.as_ref())
+            .map(|i| (i.down_rate, i.up_rate))
+            .unwrap_or((0.0, 0.0));
         push_capped(&mut self.down_history, down_rate);
         push_capped(&mut self.up_history, up_rate);
 
-        let (today_rx, today_tx) = match active.as_ref().and_then(|a| Some((a, self.counters.get(a)?))) {
+        let (today_rx, today_tx) = match active
+            .as_ref()
+            .and_then(|a| Some((a, self.counters.get(a)?)))
+        {
             Some((iface, &(rx, tx))) => self.today(iface, rx, tx),
             None => (0, 0),
         };
 
-        Network { active, down_rate, up_rate, down_history: self.down_history.clone(), up_history: self.up_history.clone(), today_rx, today_tx, interfaces }
+        Network {
+            active,
+            down_rate,
+            up_rate,
+            down_history: self.down_history.clone(),
+            up_history: self.up_history.clone(),
+            today_rx,
+            today_tx,
+            interfaces,
+        }
     }
 
     /// Bytes since the day's baseline, which starts over on a new day, a
     /// new interface, or counters that went backwards.
     fn today(&mut self, iface: &str, rx: u64, tx: u64) -> (u64, u64) {
         let date = chrono::Local::now().format("%Y-%m-%d").to_string();
-        let stale = self.baseline.as_ref().is_none_or(|b| b.date != date || b.iface != iface || rx < b.rx || tx < b.tx);
+        let stale = self
+            .baseline
+            .as_ref()
+            .is_none_or(|b| b.date != date || b.iface != iface || rx < b.rx || tx < b.tx);
         if stale {
-            let baseline = Baseline { date, iface: iface.to_owned(), rx, tx };
+            let baseline = Baseline {
+                date,
+                iface: iface.to_owned(),
+                rx,
+                tx,
+            };
             save_baseline(&baseline);
             self.baseline = Some(baseline);
         }
@@ -635,7 +756,11 @@ fn program_name(dir: &Path, comm: &str) -> String {
     let first = cmdline.split(|b| *b == 0).next().unwrap_or_default();
     let first = String::from_utf8_lossy(first);
     let command = first.split(' ').next().unwrap_or_default();
-    let base = Path::new(command).file_name().and_then(|n| n.to_str()).filter(|n| !n.is_empty()).unwrap_or(comm);
+    let base = Path::new(command)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .filter(|n| !n.is_empty())
+        .unwrap_or(comm);
     clean_program(base)
 }
 
@@ -645,42 +770,45 @@ fn clean_program(name: &str) -> String {
 }
 
 fn samples() -> impl Stream<Item = System> + Send {
-    stream::channel(4, |mut out: futures::channel::mpsc::Sender<System>| async move {
-        let mut sampler = tokio::task::spawn_blocking(|| {
-            // The first reading only seeds the diffs.
-            let mut sampler = Sampler::new();
-            sampler.sample();
-            sampler
-        })
-        .await
-        .expect("sampler setup");
-        tokio::time::sleep(Duration::from_millis(400)).await;
-        // RAPL is root's: cabin-ec reads it where we can't.
-        let system_bus = zbus::Connection::system().await.ok();
-        loop {
-            let (next, mut system) = tokio::task::spawn_blocking(move || {
-                let system = sampler.sample();
-                (sampler, system)
+    stream::channel(
+        4,
+        |mut out: futures::channel::mpsc::Sender<System>| async move {
+            let mut sampler = tokio::task::spawn_blocking(|| {
+                // The first reading only seeds the diffs.
+                let mut sampler = Sampler::new();
+                sampler.sample();
+                sampler
             })
             .await
-            .expect("sampler");
-            sampler = next;
-            if system.draw.cpu_w.is_none()
-                && let Some(conn) = &system_bus
-            {
-                system.draw.cpu_w = super::ec::cpu_watts(conn).await;
+            .expect("sampler setup");
+            tokio::time::sleep(Duration::from_millis(400)).await;
+            // RAPL is root's: cabin-ec reads it where we can't.
+            let system_bus = zbus::Connection::system().await.ok();
+            loop {
+                let (next, mut system) = tokio::task::spawn_blocking(move || {
+                    let system = sampler.sample();
+                    (sampler, system)
+                })
+                .await
+                .expect("sampler");
+                sampler = next;
+                if system.draw.cpu_w.is_none()
+                    && let Some(conn) = &system_bus
+                {
+                    system.draw.cpu_w = super::ec::cpu_watts(conn).await;
+                }
+                if out.send(system).await.is_err() {
+                    return;
+                }
+                // Wait in short steps so opening the menu speeds up sampling
+                // right away.
+                let started = Instant::now();
+                while started.elapsed() < interval() {
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                }
             }
-            if out.send(system).await.is_err() {
-                return;
-            }
-            // Wait in short steps so opening the menu speeds up sampling
-            // right away.
-            let started = Instant::now();
-            while started.elapsed() < interval() {
-                tokio::time::sleep(Duration::from_millis(250)).await;
-            }
-        }
-    })
+        },
+    )
 }
 
 pub fn subscription() -> Subscription<System> {
@@ -740,7 +868,10 @@ mod tests {
     #[test]
     fn process_stat() {
         let stat = "4242 (Web Content) S 1 4242 4242 0 -1 4194560 100 0 0 0 250 50 0 0 20 0 30 0 123456 2000000000 51200 18446744073709551615";
-        assert_eq!(parse_pid_stat(stat), Some(("Web Content".to_owned(), 300, 51200)));
+        assert_eq!(
+            parse_pid_stat(stat),
+            Some(("Web Content".to_owned(), 300, 51200))
+        );
         assert_eq!(parse_pid_stat("garbage"), None);
         assert_eq!(clean_program(".firefox-wrapped"), "firefox");
         assert_eq!(clean_program("rustc"), "rustc");

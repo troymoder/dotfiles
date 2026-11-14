@@ -40,14 +40,30 @@ pub async fn now() -> Option<Brightness> {
     if max <= 0 {
         return None;
     }
-    Some(Brightness { level: daemon.display_brightness().await.ok()?, max })
+    Some(Brightness {
+        level: daemon.display_brightness().await.ok()?,
+        max,
+    })
 }
 
 pub fn subscription() -> Subscription<Brightness> {
     fn rules() -> Vec<zbus::MatchRule<'static>> {
-        super::signal(None, Some("/com/system76/CosmicSettingsDaemon"), Some("org.freedesktop.DBus.Properties"), Some("PropertiesChanged")).into_iter().collect()
+        super::signal(
+            None,
+            Some("/com/system76/CosmicSettingsDaemon"),
+            Some("org.freedesktop.DBus.Properties"),
+            Some("PropertiesChanged"),
+        )
+        .into_iter()
+        .collect()
     }
-    Subscription::run(|| super::watch(Duration::from_secs(10), || super::bus_changes(false, rules), now))
+    Subscription::run(|| {
+        super::watch(
+            Duration::from_secs(10),
+            || super::bus_changes(false, rules),
+            now,
+        )
+    })
 }
 
 pub async fn set(level: i32) {
@@ -56,7 +72,10 @@ pub async fn set(level: i32) {
         .send(level, |level| async move {
             let set = async {
                 let conn = zbus::Connection::session().await?;
-                SettingsDaemonProxy::new(&conn).await?.set_display_brightness(level).await
+                SettingsDaemonProxy::new(&conn)
+                    .await?
+                    .set_display_brightness(level)
+                    .await
             };
             if let Err(err) = set.await {
                 tracing::warn!("cannot set the brightness: {err}");

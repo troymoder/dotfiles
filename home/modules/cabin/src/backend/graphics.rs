@@ -75,7 +75,11 @@ trait SuperGfx {
 pub async fn now() -> Option<Option<Graphics>> {
     let conn = zbus::Connection::system().await.ok()?;
     let dbus = zbus::fdo::DBusProxy::new(&conn).await.ok()?;
-    if !dbus.name_has_owner("org.supergfxctl.Daemon".try_into().ok()?).await.ok()? {
+    if !dbus
+        .name_has_owner("org.supergfxctl.Daemon".try_into().ok()?)
+        .await
+        .ok()?
+    {
         return Some(None);
     }
     let gfx = SuperGfxProxy::new(&conn).await.ok()?;
@@ -97,7 +101,15 @@ pub async fn now() -> Option<Option<Graphics>> {
 
 pub fn subscription() -> Subscription<Option<Graphics>> {
     fn rules() -> Vec<zbus::MatchRule<'static>> {
-        super::signal(None, Some("/org/supergfxctl/Gfx"), None, None).into_iter().collect()
+        super::signal(None, Some("/org/supergfxctl/Gfx"), None, None)
+            .into_iter()
+            .collect()
     }
-    Subscription::run(|| super::watch(Duration::from_secs(15), || super::bus_changes(true, rules), now))
+    Subscription::run(|| {
+        super::watch(
+            Duration::from_secs(15),
+            || super::bus_changes(true, rules),
+            now,
+        )
+    })
 }

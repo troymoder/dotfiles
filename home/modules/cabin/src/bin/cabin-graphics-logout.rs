@@ -10,17 +10,19 @@
 
 use std::time::Duration;
 
+use cabin::ui::{glass, icon, palette, text};
 use cosmic::{
     Element, app,
     iced::{
         self, Alignment, Background, Color, Length, Limits, Subscription, event,
-        platform_specific::shell::commands::layer_surface::{Anchor, KeyboardInteractivity, destroy_layer_surface, get_layer_surface},
+        platform_specific::shell::commands::layer_surface::{
+            Anchor, KeyboardInteractivity, destroy_layer_surface, get_layer_surface,
+        },
         runtime::platform_specific::wayland::layer_surface::SctkLayerSurfaceSettings,
         time, window,
     },
     theme, widget,
 };
-use cabin::ui::{glass, icon, palette, text};
 
 const COUNTDOWN: u8 = 60;
 const WIDTH: f32 = 560.0;
@@ -41,12 +43,20 @@ struct Dialog {
     countdown: u8,
 }
 
-#[zbus::proxy(interface = "org.supergfxctl.Daemon", default_service = "org.supergfxctl.Daemon", default_path = "/org/supergfxctl/Gfx")]
+#[zbus::proxy(
+    interface = "org.supergfxctl.Daemon",
+    default_service = "org.supergfxctl.Daemon",
+    default_path = "/org/supergfxctl/Gfx"
+)]
 trait SuperGfx {
     fn set_mode(&self, mode: u32) -> zbus::Result<u32>;
 }
 
-#[zbus::proxy(interface = "com.system76.CosmicSession", default_service = "com.system76.CosmicSession", default_path = "/com/system76/CosmicSession")]
+#[zbus::proxy(
+    interface = "com.system76.CosmicSession",
+    default_service = "com.system76.CosmicSession",
+    default_path = "/com/system76/CosmicSession"
+)]
 trait CosmicSession {
     fn exit(&self) -> zbus::Result<()>;
 }
@@ -67,7 +77,11 @@ fn dialog_button<'a>(label: &'a str, primary: bool, message: Message) -> Element
             (false, true) => palette::rgba(160, 190, 235, 0.2),
             (false, false) => palette::rgba(160, 190, 235, 0.12),
         })),
-        text_color: Some(if primary { palette::ON_ACCENT } else { palette::TEXT }),
+        text_color: Some(if primary {
+            palette::ON_ACCENT
+        } else {
+            palette::TEXT
+        }),
         border_radius: 12.0.into(),
         ..widget::button::Style::new()
     };
@@ -100,7 +114,13 @@ impl cosmic::Application for Dialog {
     fn init(mut core: app::Core, (mode, name): (u32, String)) -> (Self, app::Task<Message>) {
         core.set_app_type(cosmic::core::AppType::System);
         let surface = window::Id::unique();
-        let dialog = Self { core, mode, name, surface, countdown: COUNTDOWN };
+        let dialog = Self {
+            core,
+            mode,
+            name,
+            surface,
+            countdown: COUNTDOWN,
+        };
         // The whole screen: the scrim, with the card near the top.
         let open = get_layer_surface(SctkLayerSurfaceSettings {
             id: surface,
@@ -112,14 +132,19 @@ impl cosmic::Application for Dialog {
             ..Default::default()
         });
         let font = match text::file().and_then(|path| std::fs::read(path).ok()) {
-            Some(bytes) => iced::font::load(std::borrow::Cow::Owned(bytes)).map(|_| cosmic::action::app(Message::Done)),
+            Some(bytes) => iced::font::load(std::borrow::Cow::Owned(bytes))
+                .map(|_| cosmic::action::app(Message::Done)),
             None => app::Task::none(),
         };
         (dialog, app::Task::batch([open, font]))
     }
 
     fn style(&self) -> Option<iced::theme::Style> {
-        Some(iced::theme::Style { background_color: Color::TRANSPARENT, text_color: palette::TEXT, icon_color: palette::TEXT })
+        Some(iced::theme::Style {
+            background_color: Color::TRANSPARENT,
+            text_color: palette::TEXT,
+            icon_color: palette::TEXT,
+        })
     }
 
     fn update(&mut self, message: Message) -> app::Task<Message> {
@@ -156,36 +181,61 @@ impl cosmic::Application for Dialog {
         if id != self.surface {
             return widget::text("").into();
         }
-        let chip = widget::container(icon("logout", 26)).center(Length::Fixed(52.0)).class(theme::Container::custom(|_| widget::container::Style {
-            background: Some(Background::Color(palette::ACCENT)),
-            icon_color: Some(palette::ON_ACCENT),
-            border: iced::Border { radius: 14.0.into(), ..Default::default() },
-            ..Default::default()
-        }));
-        let body = format!("Switching graphics to {} needs a new session. Logging out in {} s.", self.name, self.countdown);
+        let chip = widget::container(icon("logout", 26))
+            .center(Length::Fixed(52.0))
+            .class(theme::Container::custom(|_| widget::container::Style {
+                background: Some(Background::Color(palette::ACCENT)),
+                icon_color: Some(palette::ON_ACCENT),
+                border: iced::Border {
+                    radius: 14.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }));
+        let body = format!(
+            "Switching graphics to {} needs a new session. Logging out in {} s.",
+            self.name, self.countdown
+        );
         let words = widget::column::with_children(vec![
             text::sized_bold("Log out?", 20.0).into(),
-            text::sized(body, 13.5).class(theme::Text::Color(palette::rgba(232, 236, 246, 0.78))).into(),
+            text::sized(body, 13.5)
+                .class(theme::Text::Color(palette::rgba(232, 236, 246, 0.78)))
+                .into(),
         ])
         .spacing(6);
-        let top = widget::row::with_children(vec![chip.into(), words.into()]).spacing(18).align_y(Alignment::Start);
+        let top = widget::row::with_children(vec![chip.into(), words.into()])
+            .spacing(18)
+            .align_y(Alignment::Start);
         let buttons = widget::row::with_children(vec![
             widget::space::horizontal().into(),
             dialog_button("Cancel", false, Message::Cancel),
             dialog_button("Log out", true, Message::Confirm),
         ])
         .spacing(10);
-        let card = glass(widget::column::with_children(vec![top.into(), buttons.into()]).spacing(22), [26.0, 26.0, 20.0, 26.0], Some(WIDTH));
+        let card = glass(
+            widget::column::with_children(vec![top.into(), buttons.into()]).spacing(22),
+            [26.0, 26.0, 20.0, 26.0],
+            Some(WIDTH),
+        );
         // The scrim: a press on it is a Cancel; the card swallows its own.
         widget::mouse_area(
             widget::container(cosmic::iced::widget::stack([
-                widget::mouse_area(widget::container(widget::space::horizontal()).width(Length::Fill).height(Length::Fill).class(theme::Container::custom(|_| widget::container::Style {
-                    background: Some(Background::Color(palette::rgba(5, 8, 18, 0.45))),
-                    ..Default::default()
-                })))
+                widget::mouse_area(
+                    widget::container(widget::space::horizontal())
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .class(theme::Container::custom(|_| widget::container::Style {
+                            background: Some(Background::Color(palette::rgba(5, 8, 18, 0.45))),
+                            ..Default::default()
+                        })),
+                )
                 .on_press(Message::Cancel)
                 .into(),
-                widget::container(widget::mouse_area(card).on_press(Message::Done)).width(Length::Fill).align_x(Alignment::Center).padding([240, 0, 0, 0]).into(),
+                widget::container(widget::mouse_area(card).on_press(Message::Done))
+                    .width(Length::Fill)
+                    .align_x(Alignment::Center)
+                    .padding([240, 0, 0, 0])
+                    .into(),
             ]))
             .width(Length::Fill)
             .height(Length::Fill),
@@ -197,7 +247,10 @@ impl cosmic::Application for Dialog {
         Subscription::batch([
             time::every(Duration::from_secs(1)).map(|_| Message::Tick),
             event::listen_with(|event, _, _| match event {
-                iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape), .. }) => Some(Message::Cancel),
+                iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                    key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+                    ..
+                }) => Some(Message::Cancel),
                 _ => None,
             }),
         ])
@@ -209,5 +262,10 @@ fn main() -> iced::Result {
     let mut args = std::env::args().skip(1);
     let mode: u32 = args.next().and_then(|m| m.parse().ok()).unwrap_or(0);
     let name = args.next().unwrap_or_else(|| "another mode".to_owned());
-    cosmic::app::run::<Dialog>(app::Settings::default().no_main_window(true).exit_on_close(false), (mode, name))
+    cosmic::app::run::<Dialog>(
+        app::Settings::default()
+            .no_main_window(true)
+            .exit_on_close(false),
+        (mode, name),
+    )
 }

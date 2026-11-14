@@ -41,7 +41,9 @@ pub struct Notification {
 fn history_file() -> Option<std::path::PathBuf> {
     let dir = std::env::var_os("XDG_STATE_HOME")
         .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state")))?;
+        .or_else(|| {
+            std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state"))
+        })?;
     Some(dir.join(crate::APP_ID).join("notifications.json"))
 }
 
@@ -65,10 +67,13 @@ pub fn save(notifications: &[Notification]) {
     let Some(file) = history_file() else {
         return;
     };
-    let result = file.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| {
-        let data = serde_json::to_vec(notifications).map_err(std::io::Error::other)?;
-        std::fs::write(&file, data)
-    });
+    let result = file
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| {
+            let data = serde_json::to_vec(notifications).map_err(std::io::Error::other)?;
+            std::fs::write(&file, data)
+        });
     if let Err(err) = result {
         tracing::warn!("cannot keep the notifications: {err}");
     }
@@ -161,7 +166,13 @@ fn plain(body: &str) -> String {
             _ => {}
         }
     }
-    out.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&").trim().to_owned()
+    out.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+        .trim()
+        .to_owned()
 }
 
 /// The icon to show: the app's own by its desktop entry where given, else
@@ -174,7 +185,9 @@ fn icon_for(desktop_entry: Option<&str>, app_icon: &str, image: Option<&str>) ->
         .into_iter()
         .flatten()
         .map(|icon| icon.strip_prefix("file://").unwrap_or(icon))
-        .find(|icon| !icon.is_empty() && (!icon.starts_with('/') || std::path::Path::new(icon).exists()))
+        .find(|icon| {
+            !icon.is_empty() && (!icon.starts_with('/') || std::path::Path::new(icon).exists())
+        })
         .unwrap_or("preferences-system-notifications-symbolic")
         .to_owned()
 }
@@ -186,7 +199,9 @@ fn event(opened: &mut HashSet<u32>, signal: Signal) -> Option<Event> {
             opened.insert(id);
             return None;
         }
-        Signal::Closed(id, EXPIRED | DISMISSED_BY_USER) if !opened.contains(&id) => Event::Dismissed,
+        Signal::Closed(id, EXPIRED | DISMISSED_BY_USER) if !opened.contains(&id) => {
+            Event::Dismissed
+        }
         Signal::Closed(id, _) => {
             opened.remove(&id);
             Event::Closed(id)
@@ -196,65 +211,75 @@ fn event(opened: &mut HashSet<u32>, signal: Signal) -> Option<Event> {
 
 pub fn subscription() -> Subscription<Event> {
     Subscription::run(|| {
-        stream::channel(50, |mut output: futures::channel::mpsc::Sender<Event>| async move {
-            let Some(daemon) = daemon().await else {
-                tracing::info!("no notifications socket from the panel");
-                return futures::future::pending().await;
-            };
-            let Ok(session) = zbus::Connection::session().await else {
-                return futures::future::pending().await;
-            };
-            let Ok(freedesktop) = NotificationsProxy::new(&session).await else {
-                return futures::future::pending().await;
-            };
-            let (Ok(notify), Ok(closed), Ok(invoked)) =
-                (daemon.receive_notify().await, freedesktop.receive_notification_closed().await, freedesktop.receive_action_invoked().await)
-            else {
-                return futures::future::pending().await;
-            };
-            let notify = notify.filter_map(|signal| async move {
-                let args = signal.args().ok()?;
-                let actions = args
-                    .actions
-                    .chunks(2)
-                    .filter_map(|pair| match pair {
-                        [key, label] => Some((key.to_string(), label.to_string())),
+        stream::channel(
+            50,
+            |mut output: futures::channel::mpsc::Sender<Event>| async move {
+                let Some(daemon) = daemon().await else {
+                    tracing::info!("no notifications socket from the panel");
+                    return futures::future::pending().await;
+                };
+                let Ok(session) = zbus::Connection::session().await else {
+                    return futures::future::pending().await;
+                };
+                let Ok(freedesktop) = NotificationsProxy::new(&session).await else {
+                    return futures::future::pending().await;
+                };
+                let (Ok(notify), Ok(closed), Ok(invoked)) = (
+                    daemon.receive_notify().await,
+                    freedesktop.receive_notification_closed().await,
+                    freedesktop.receive_action_invoked().await,
+                ) else {
+                    return futures::future::pending().await;
+                };
+                let notify = notify.filter_map(|signal| async move {
+                    let args = signal.args().ok()?;
+                    let actions = args
+                        .actions
+                        .chunks(2)
+                        .filter_map(|pair| match pair {
+                            [key, label] => Some((key.to_string(), label.to_string())),
+                            _ => None,
+                        })
+                        .collect();
+                    let hint = |key: &str| match args.hints.get(key) {
+                        Some(Value::Str(value)) => Some(value.to_string()),
                         _ => None,
-                    })
-                    .collect();
-                let hint = |key: &str| match args.hints.get(key) {
-                    Some(Value::Str(value)) => Some(value.to_string()),
-                    _ => None,
-                };
-                Some(Signal::New(Notification {
-                    id: args.id,
-                    app: args.app_name.to_owned(),
-                    icon: icon_for(hint("desktop-entry").as_deref(), args.app_icon, None),
-                    image: hint("image-path").map(|p| p.strip_prefix("file://").unwrap_or(&p).to_owned()).filter(|p| std::path::Path::new(p).exists()),
-                    summary: args.summary.to_owned(),
-                    body: plain(args.body),
-                    actions,
-                    time: SystemTime::now(),
-                    restored: false,
-                }))
-            });
-            let closed = closed.filter_map(|signal| async move {
-                let args = signal.args().ok()?;
-                Some(Signal::Closed(args.id, args.reason))
-            });
-            let invoked = invoked.filter_map(|signal| async move { Some(Signal::Invoked(signal.args().ok()?.id)) });
-            let mut signals = futures::stream::select_all([notify.boxed(), closed.boxed(), invoked.boxed()]);
-            let mut opened = HashSet::new();
-            while let Some(signal) = signals.next().await {
-                let Some(event) = event(&mut opened, signal) else {
-                    continue;
-                };
-                if output.send(event).await.is_err() {
-                    return;
+                    };
+                    Some(Signal::New(Notification {
+                        id: args.id,
+                        app: args.app_name.to_owned(),
+                        icon: icon_for(hint("desktop-entry").as_deref(), args.app_icon, None),
+                        image: hint("image-path")
+                            .map(|p| p.strip_prefix("file://").unwrap_or(&p).to_owned())
+                            .filter(|p| std::path::Path::new(p).exists()),
+                        summary: args.summary.to_owned(),
+                        body: plain(args.body),
+                        actions,
+                        time: SystemTime::now(),
+                        restored: false,
+                    }))
+                });
+                let closed = closed.filter_map(|signal| async move {
+                    let args = signal.args().ok()?;
+                    Some(Signal::Closed(args.id, args.reason))
+                });
+                let invoked = invoked.filter_map(|signal| async move {
+                    Some(Signal::Invoked(signal.args().ok()?.id))
+                });
+                let mut signals =
+                    futures::stream::select_all([notify.boxed(), closed.boxed(), invoked.boxed()]);
+                let mut opened = HashSet::new();
+                while let Some(signal) = signals.next().await {
+                    let Some(event) = event(&mut opened, signal) else {
+                        continue;
+                    };
+                    if output.send(event).await.is_err() {
+                        return;
+                    }
                 }
-            }
-            futures::future::pending().await
-        })
+                futures::future::pending().await
+            },
+        )
     })
 }
 

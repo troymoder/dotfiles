@@ -19,7 +19,9 @@ use cosmic::cctk::{
     },
     toplevel_info::{ToplevelInfoHandler, ToplevelInfoState},
     toplevel_management::{ToplevelManagerHandler, ToplevelManagerState},
-    wayland_client::{Connection, QueueHandle, WEnum, globals::registry_queue_init, protocol::wl_seat::WlSeat},
+    wayland_client::{
+        Connection, QueueHandle, WEnum, globals::registry_queue_init, protocol::wl_seat::WlSeat,
+    },
     wayland_protocols::ext::foreign_toplevel_list::v1::client::ext_foreign_toplevel_handle_v1::ExtForeignToplevelHandleV1,
 };
 
@@ -49,13 +51,22 @@ fn connect() -> Option<Connection> {
     // compositor knows by its object ids, so it can't be opened twice.
     static PRIVILEGED: std::sync::OnceLock<Option<Connection>> = std::sync::OnceLock::new();
     let privileged = PRIVILEGED.get_or_init(|| {
-        let fd = std::env::var("X_PRIVILEGED_WAYLAND_SOCKET").ok()?.parse::<RawFd>().ok()?;
+        let fd = std::env::var("X_PRIVILEGED_WAYLAND_SOCKET")
+            .ok()?
+            .parse::<RawFd>()
+            .ok()?;
         // SAFETY: the panel opened this fd for us alone; nothing else in the
         // process reads the variable, and this runs once.
         let socket = unsafe { UnixStream::from_raw_fd(fd) };
-        Connection::from_socket(socket).inspect_err(|err| tracing::debug!("toplevels: privileged socket: {err}")).ok()
+        Connection::from_socket(socket)
+            .inspect_err(|err| tracing::debug!("toplevels: privileged socket: {err}"))
+            .ok()
     });
-    privileged.clone().or_else(|| Connection::connect_to_env().inspect_err(|err| tracing::debug!("toplevels: no wayland connection: {err}")).ok())
+    privileged.clone().or_else(|| {
+        Connection::connect_to_env()
+            .inspect_err(|err| tracing::debug!("toplevels: no wayland connection: {err}"))
+            .ok()
+    })
 }
 
 /// An app id as compared: case and a `.desktop` suffix do not count.
@@ -76,11 +87,19 @@ fn activate_blocking(app_id: &str) -> bool {
     };
     let qh = queue.handle();
     let registry = RegistryState::new(&globals);
-    let (Some(info), Some(manager)) = (ToplevelInfoState::try_new(&registry, &qh), ToplevelManagerState::try_new(&registry, &qh)) else {
+    let (Some(info), Some(manager)) = (
+        ToplevelInfoState::try_new(&registry, &qh),
+        ToplevelManagerState::try_new(&registry, &qh),
+    ) else {
         tracing::debug!("toplevels: the compositor offers no toplevel info or management here");
         return false;
     };
-    let mut state = State { seats: SeatState::new(&globals, &qh), registry, info, manager };
+    let mut state = State {
+        seats: SeatState::new(&globals, &qh),
+        registry,
+        info,
+        manager,
+    };
     for _ in 0..ROUNDTRIPS {
         if let Err(err) = queue.roundtrip(&mut state) {
             tracing::debug!("toplevels: {err}");
@@ -92,7 +111,12 @@ fn activate_blocking(app_id: &str) -> bool {
         return false;
     };
     let wanted = key(app_id);
-    let Some(handle) = state.info.toplevels().find(|t| key(&t.app_id) == wanted).and_then(|t| t.cosmic_toplevel.clone()) else {
+    let Some(handle) = state
+        .info
+        .toplevels()
+        .find(|t| key(&t.app_id) == wanted)
+        .and_then(|t| t.cosmic_toplevel.clone())
+    else {
         let seen: Vec<&str> = state.info.toplevels().map(|t| t.app_id.as_str()).collect();
         tracing::debug!("toplevels: no window of {app_id}; open: {seen:?}");
         return false;
@@ -128,7 +152,14 @@ impl SeatHandler for State {
     }
     fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlSeat) {}
     fn new_capability(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlSeat, _: Capability) {}
-    fn remove_capability(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlSeat, _: Capability) {}
+    fn remove_capability(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: WlSeat,
+        _: Capability,
+    ) {
+    }
     fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlSeat) {}
 }
 
@@ -136,20 +167,54 @@ impl ToplevelInfoHandler for State {
     fn toplevel_info_state(&mut self) -> &mut ToplevelInfoState {
         &mut self.info
     }
-    fn new_toplevel(&mut self, _: &Connection, _: &QueueHandle<Self>, handle: &ExtForeignToplevelHandleV1) {
-        tracing::debug!("toplevels: new {:?}", self.info.info(handle).map(|t| (t.app_id.clone(), t.cosmic_toplevel.is_some())));
+    fn new_toplevel(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        handle: &ExtForeignToplevelHandleV1,
+    ) {
+        tracing::debug!(
+            "toplevels: new {:?}",
+            self.info
+                .info(handle)
+                .map(|t| (t.app_id.clone(), t.cosmic_toplevel.is_some()))
+        );
     }
-    fn update_toplevel(&mut self, _: &Connection, _: &QueueHandle<Self>, handle: &ExtForeignToplevelHandleV1) {
-        tracing::debug!("toplevels: update {:?}", self.info.info(handle).map(|t| (t.app_id.clone(), t.cosmic_toplevel.is_some(), t.state.len())));
+    fn update_toplevel(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        handle: &ExtForeignToplevelHandleV1,
+    ) {
+        tracing::debug!(
+            "toplevels: update {:?}",
+            self.info.info(handle).map(|t| (
+                t.app_id.clone(),
+                t.cosmic_toplevel.is_some(),
+                t.state.len()
+            ))
+        );
     }
-    fn toplevel_closed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &ExtForeignToplevelHandleV1) {}
+    fn toplevel_closed(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &ExtForeignToplevelHandleV1,
+    ) {
+    }
 }
 
 impl ToplevelManagerHandler for State {
     fn toplevel_manager_state(&mut self) -> &mut ToplevelManagerState {
         &mut self.manager
     }
-    fn capabilities(&mut self, _: &Connection, _: &QueueHandle<Self>, _: Vec<WEnum<ZcosmicToplelevelManagementCapabilitiesV1>>) {}
+    fn capabilities(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: Vec<WEnum<ZcosmicToplelevelManagementCapabilitiesV1>>,
+    ) {
+    }
 }
 
 cctk::delegate_toplevel_info!(State);
@@ -166,7 +231,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn raises_settings() {
-        let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).try_init();
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .try_init();
         let found = super::activate("com.system76.CosmicSettings".into()).await;
         println!("activate(com.system76.CosmicSettings) -> {found}");
     }
@@ -176,22 +243,36 @@ mod tests {
 /// the privileged socket: a window it then opens may take the focus. Tokens
 /// from the applet's own surfaces don't count, as those live on the panel.
 pub async fn activation_token(app_id: String) -> Option<String> {
-    tokio::task::spawn_blocking(move || token_blocking(app_id)).await.ok().flatten()
+    tokio::task::spawn_blocking(move || token_blocking(app_id))
+        .await
+        .ok()
+        .flatten()
 }
 
 fn token_blocking(app_id: String) -> Option<String> {
     let conn = connect()?;
-    let (globals, mut queue) = registry_queue_init::<TokenState>(&conn).inspect_err(|err| tracing::debug!("toplevels: no registry: {err}")).ok()?;
+    let (globals, mut queue) = registry_queue_init::<TokenState>(&conn)
+        .inspect_err(|err| tracing::debug!("toplevels: no registry: {err}"))
+        .ok()?;
     let qh = queue.handle();
     let mut state = TokenState {
         registry: RegistryState::new(&globals),
         seats: SeatState::new(&globals, &qh),
-        activation: ActivationState::bind::<TokenState>(&globals, &qh).inspect_err(|err| tracing::debug!("toplevels: no activation: {err}")).ok()?,
+        activation: ActivationState::bind::<TokenState>(&globals, &qh)
+            .inspect_err(|err| tracing::debug!("toplevels: no activation: {err}"))
+            .ok()?,
         token: None,
     };
     queue.roundtrip(&mut state).ok()?;
     let seat = state.seats.seats().next();
-    state.activation.request_token_with_data(&qh, RequestData { app_id: Some(app_id), seat_and_serial: seat.map(|seat| (seat, 0)), surface: None });
+    state.activation.request_token_with_data(
+        &qh,
+        RequestData {
+            app_id: Some(app_id),
+            seat_and_serial: seat.map(|seat| (seat, 0)),
+            surface: None,
+        },
+    );
     for _ in 0..ROUNDTRIPS {
         queue.roundtrip(&mut state).ok()?;
         if state.token.is_some() {
@@ -221,7 +302,14 @@ impl SeatHandler for TokenState {
     }
     fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlSeat) {}
     fn new_capability(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlSeat, _: Capability) {}
-    fn remove_capability(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlSeat, _: Capability) {}
+    fn remove_capability(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: WlSeat,
+        _: Capability,
+    ) {
+    }
     fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlSeat) {}
 }
 

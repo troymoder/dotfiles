@@ -66,6 +66,9 @@ pub enum Request {
     Close,
     /// The volume up (or down, negative) by this many steps of 5 %.
     Volume(f64),
+    /// The window switcher up, or its pick moved on (back, negative);
+    /// with pictures of the windows if it's coming up.
+    Switch(i32, bool),
     /// A notification, as the clock button had it from the panel.
     Notified(Box<crate::backend::notifications::Notification>),
     NotificationClosed(u32),
@@ -131,12 +134,16 @@ struct Server {
 
 impl Server {
     fn send(&self, request: Request) -> zbus::fdo::Result<()> {
-        self.requests.unbounded_send(request).map_err(|_| zbus::fdo::Error::Failed("the daemon is stopping".to_owned()))
+        self.requests
+            .unbounded_send(request)
+            .map_err(|_| zbus::fdo::Error::Failed("the daemon is stopping".to_owned()))
     }
 }
 
 fn owner(name: &str) -> zbus::fdo::Result<Owner> {
-    Owner::parse(name).ok_or_else(|| zbus::fdo::Error::InvalidArgs(format!("no such panel: {name} (controls, date, system)")))
+    Owner::parse(name).ok_or_else(|| {
+        zbus::fdo::Error::InvalidArgs(format!("no such panel: {name} (controls, date, system)"))
+    })
 }
 
 #[zbus::interface(name = "dev.troy.Cabin")]
@@ -146,7 +153,10 @@ impl Server {
     }
 
     fn open(&self, panel: &str, menu: &str) -> zbus::fdo::Result<()> {
-        self.send(Request::Open(owner(panel)?, (!menu.is_empty()).then(|| menu.to_owned())))
+        self.send(Request::Open(
+            owner(panel)?,
+            (!menu.is_empty()).then(|| menu.to_owned()),
+        ))
     }
 
     fn close(&self) -> zbus::fdo::Result<()> {
@@ -157,13 +167,21 @@ impl Server {
         self.send(Request::Volume(steps))
     }
 
+    fn switch(&self, step: i32, previews: bool) -> zbus::fdo::Result<()> {
+        self.send(Request::Switch(step, previews))
+    }
+
     /// The bar a button draws (`status`, `clock`, `system`), as JSON.
     fn bar(&self, kind: &str) -> String {
-        BARS.lock().ok().and_then(|bars| bars.as_ref()?.get(kind).cloned()).unwrap_or_default()
+        BARS.lock()
+            .ok()
+            .and_then(|bars| bars.as_ref()?.get(kind).cloned())
+            .unwrap_or_default()
     }
 
     fn notified(&self, notification: &str) -> zbus::fdo::Result<()> {
-        let notification = serde_json::from_str(notification).map_err(|err| zbus::fdo::Error::InvalidArgs(err.to_string()))?;
+        let notification = serde_json::from_str(notification)
+            .map_err(|err| zbus::fdo::Error::InvalidArgs(err.to_string()))?;
         self.send(Request::Notified(Box::new(notification)))
     }
 
@@ -172,44 +190,60 @@ impl Server {
     }
 
     #[zbus(signal)]
-    async fn bar_changed(emitter: &zbus::object_server::SignalEmitter<'_>, kind: &str, bar: &str) -> zbus::Result<()>;
+    async fn bar_changed(
+        emitter: &zbus::object_server::SignalEmitter<'_>,
+        kind: &str,
+        bar: &str,
+    ) -> zbus::Result<()>;
 
     #[zbus(signal)]
-    async fn invoke_action(emitter: &zbus::object_server::SignalEmitter<'_>, id: u32, key: &str) -> zbus::Result<()>;
+    async fn invoke_action(
+        emitter: &zbus::object_server::SignalEmitter<'_>,
+        id: u32,
+        key: &str,
+    ) -> zbus::Result<()>;
 
     #[zbus(signal)]
-    async fn open_settings(emitter: &zbus::object_server::SignalEmitter<'_>, page: &str) -> zbus::Result<()>;
+    async fn open_settings(
+        emitter: &zbus::object_server::SignalEmitter<'_>,
+        page: &str,
+    ) -> zbus::Result<()>;
 }
 
 /// The daemon's end: takes the name and passes on what's asked. Another
 /// daemon holding the name already is fatal: two would draw every panel.
 pub fn serve() -> Subscription<Request> {
     Subscription::run(|| {
-        stream::channel(32, |mut output: futures::channel::mpsc::Sender<Request>| async move {
-            let (requests, mut incoming) = futures::channel::mpsc::unbounded();
-            let built = async {
-                zbus::connection::Builder::session()?
-                    .serve_at(PATH, Server { requests })?
-                    .name(zbus::names::WellKnownName::try_from(NAME)?)?
-                    .build()
-                    .await
-            };
-            match built.await {
-                Ok(connection) => {
-                    _ = CONNECTION.set(connection);
+        stream::channel(
+            32,
+            |mut output: futures::channel::mpsc::Sender<Request>| async move {
+                let (requests, mut incoming) = futures::channel::mpsc::unbounded();
+                let built = async {
+                    zbus::connection::Builder::session()?
+                        .serve_at(PATH, Server { requests })?
+                        .name(zbus::names::WellKnownName::try_from(NAME)?)?
+                        .build()
+                        .await
+                };
+                match built.await {
+                    Ok(connection) => {
+                        _ = CONNECTION.set(connection);
+                    }
+                    Err(err) => {
+                        tracing::error!(
+                            "cannot take {NAME} on the session bus (another cabind running?): {err}"
+                        );
+                        std::process::exit(1);
+                    }
                 }
-                Err(err) => {
-                    tracing::error!("cannot take {NAME} on the session bus (another cabind running?): {err}");
-                    std::process::exit(1);
+                while let Some(request) = incoming.next().await {
+                    if output.send(request).await.is_err() {
+                        return;
+                    }
                 }
-            }
-            while let Some(request) = incoming.next().await {
-                if output.send(request).await.is_err() {
-                    return;
-                }
-            }
-            futures::future::pending().await
-        })
+                futures::future::pending().await
+            },
+        )
     })
 }
 
@@ -217,7 +251,10 @@ async fn emit(member: &'static str, body: &(impl Serialize + zbus::zvariant::Dyn
     let Some(connection) = CONNECTION.get() else {
         return;
     };
-    if let Err(err) = connection.emit_signal(None::<()>, PATH, NAME, member, body).await {
+    if let Err(err) = connection
+        .emit_signal(None::<()>, PATH, NAME, member, body)
+        .await
+    {
         tracing::warn!("cannot signal {member}: {err}");
     }
 }
@@ -225,7 +262,8 @@ async fn emit(member: &'static str, body: &(impl Serialize + zbus::zvariant::Dyn
 /// A bar told to the buttons, and kept for those that ask.
 pub async fn publish_bar(kind: &'static str, bar: String) {
     if let Ok(mut bars) = BARS.lock() {
-        bars.get_or_insert_with(HashMap::new).insert(kind.to_owned(), bar.clone());
+        bars.get_or_insert_with(HashMap::new)
+            .insert(kind.to_owned(), bar.clone());
     }
     emit("BarChanged", &(kind, bar.as_str())).await;
 }
@@ -242,12 +280,17 @@ pub async fn ask_settings(page: Option<&'static str>) {
 
 // ---- the buttons' side, and cabinctl's
 
-#[zbus::proxy(interface = "dev.troy.Cabin", default_service = "dev.troy.Cabin", default_path = "/dev/troy/Cabin")]
+#[zbus::proxy(
+    interface = "dev.troy.Cabin",
+    default_service = "dev.troy.Cabin",
+    default_path = "/dev/troy/Cabin"
+)]
 pub trait Cabin {
     fn toggle(&self, panel: &str) -> zbus::Result<()>;
     fn open(&self, panel: &str, menu: &str) -> zbus::Result<()>;
     fn close(&self) -> zbus::Result<()>;
     fn volume(&self, steps: f64) -> zbus::Result<()>;
+    fn switch(&self, step: i32, previews: bool) -> zbus::Result<()>;
     fn bar(&self, kind: &str) -> zbus::Result<String>;
     fn notified(&self, notification: &str) -> zbus::Result<()>;
     fn notification_closed(&self, id: u32) -> zbus::Result<()>;
@@ -265,8 +308,14 @@ pub async fn daemon() -> Option<CabinProxy<'static>> {
     static PROXY: OnceCell<Option<CabinProxy<'static>>> = OnceCell::const_new();
     PROXY
         .get_or_init(|| async {
-            let connection = zbus::Connection::session().await.inspect_err(|err| tracing::warn!("no session bus: {err}")).ok()?;
-            CabinProxy::new(&connection).await.inspect_err(|err| tracing::warn!("cannot reach {NAME}: {err}")).ok()
+            let connection = zbus::Connection::session()
+                .await
+                .inspect_err(|err| tracing::warn!("no session bus: {err}"))
+                .ok()?;
+            CabinProxy::new(&connection)
+                .await
+                .inspect_err(|err| tracing::warn!("cannot reach {NAME}: {err}"))
+                .ok()
         })
         .await
         .clone()
@@ -291,101 +340,114 @@ where
 pub fn bar(kind: &'static str) -> Subscription<String> {
     Subscription::run_with(kind, |kind| {
         let kind = *kind;
-        stream::channel(8, move |mut output: futures::channel::mpsc::Sender<String>| async move {
-            let daemon = loop {
-                match daemon().await {
-                    Some(daemon) => break daemon,
-                    None => tokio::time::sleep(std::time::Duration::from_secs(5)).await,
-                }
-            };
-            let (Ok(changes), Ok(owners)) = (daemon.receive_bar_changed().await, daemon.inner().receive_owner_changed().await) else {
-                return futures::future::pending().await;
-            };
-            enum Event {
-                Bar(String),
-                Owner(bool),
-                Ask,
-            }
-            let changes = changes.filter_map(move |signal| async move {
-                let args = signal.args().ok()?;
-                (args.kind == kind).then(|| Event::Bar(args.bar.clone()))
-            });
-            let owners = owners.map(|owner| Event::Owner(owner.is_some()));
-            let asks = futures::stream::once(async { Event::Ask });
-            let mut events = futures::stream::select_all([changes.boxed(), owners.boxed(), asks.boxed()]);
-            while let Some(event) = events.next().await {
-                let bar = match event {
-                    Event::Bar(bar) => Some(bar),
-                    Event::Owner(false) => None,
-                    Event::Owner(true) | Event::Ask => {
-                        // Asked until there's an answer: the daemon may be
-                        // starting, or not yet started.
-                        let mut answer = None;
-                        for _ in 0..30 {
-                            match daemon.bar(kind).await {
-                                Ok(bar) if !bar.is_empty() => {
-                                    answer = Some(bar);
-                                    break;
-                                }
-                                Ok(_) => {}
-                                Err(err) => tracing::debug!("cabind: no bar yet: {err}"),
-                            }
-                            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                        }
-                        answer
+        stream::channel(
+            8,
+            move |mut output: futures::channel::mpsc::Sender<String>| async move {
+                let daemon = loop {
+                    match daemon().await {
+                        Some(daemon) => break daemon,
+                        None => tokio::time::sleep(std::time::Duration::from_secs(5)).await,
                     }
                 };
-                if let Some(bar) = bar {
-                    if output.send(bar).await.is_err() {
-                        return;
+                let (Ok(changes), Ok(owners)) = (
+                    daemon.receive_bar_changed().await,
+                    daemon.inner().receive_owner_changed().await,
+                ) else {
+                    return futures::future::pending().await;
+                };
+                enum Event {
+                    Bar(String),
+                    Owner(bool),
+                    Ask,
+                }
+                let changes = changes.filter_map(move |signal| async move {
+                    let args = signal.args().ok()?;
+                    (args.kind == kind).then(|| Event::Bar(args.bar.clone()))
+                });
+                let owners = owners.map(|owner| Event::Owner(owner.is_some()));
+                let asks = futures::stream::once(async { Event::Ask });
+                let mut events =
+                    futures::stream::select_all([changes.boxed(), owners.boxed(), asks.boxed()]);
+                while let Some(event) = events.next().await {
+                    let bar = match event {
+                        Event::Bar(bar) => Some(bar),
+                        Event::Owner(false) => None,
+                        Event::Owner(true) | Event::Ask => {
+                            // Asked until there's an answer: the daemon may be
+                            // starting, or not yet started.
+                            let mut answer = None;
+                            for _ in 0..30 {
+                                match daemon.bar(kind).await {
+                                    Ok(bar) if !bar.is_empty() => {
+                                        answer = Some(bar);
+                                        break;
+                                    }
+                                    Ok(_) => {}
+                                    Err(err) => tracing::debug!("cabind: no bar yet: {err}"),
+                                }
+                                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                            }
+                            answer
+                        }
+                    };
+                    if let Some(bar) = bar {
+                        if output.send(bar).await.is_err() {
+                            return;
+                        }
                     }
                 }
-            }
-            futures::future::pending().await
-        })
+                futures::future::pending().await
+            },
+        )
     })
 }
 
 /// The daemon asking the clock button to take a notification's action.
 pub fn invoke_requests() -> Subscription<(u32, String)> {
     Subscription::run(|| {
-        stream::channel(8, |mut output: futures::channel::mpsc::Sender<(u32, String)>| async move {
-            let Some(daemon) = daemon().await else {
-                return futures::future::pending().await;
-            };
-            let Ok(mut signals) = daemon.receive_invoke_action().await else {
-                return futures::future::pending().await;
-            };
-            while let Some(signal) = signals.next().await {
-                if let Ok(args) = signal.args() {
-                    if output.send((args.id, args.key.clone())).await.is_err() {
-                        return;
+        stream::channel(
+            8,
+            |mut output: futures::channel::mpsc::Sender<(u32, String)>| async move {
+                let Some(daemon) = daemon().await else {
+                    return futures::future::pending().await;
+                };
+                let Ok(mut signals) = daemon.receive_invoke_action().await else {
+                    return futures::future::pending().await;
+                };
+                while let Some(signal) = signals.next().await {
+                    if let Ok(args) = signal.args() {
+                        if output.send((args.id, args.key.clone())).await.is_err() {
+                            return;
+                        }
                     }
                 }
-            }
-            futures::future::pending().await
-        })
+                futures::future::pending().await
+            },
+        )
     })
 }
 
 /// The daemon asking the status button to open Settings: the page, or "".
 pub fn settings_requests() -> Subscription<String> {
     Subscription::run(|| {
-        stream::channel(8, |mut output: futures::channel::mpsc::Sender<String>| async move {
-            let Some(daemon) = daemon().await else {
-                return futures::future::pending().await;
-            };
-            let Ok(mut signals) = daemon.receive_open_settings().await else {
-                return futures::future::pending().await;
-            };
-            while let Some(signal) = signals.next().await {
-                if let Ok(args) = signal.args() {
-                    if output.send(args.page.clone()).await.is_err() {
-                        return;
+        stream::channel(
+            8,
+            |mut output: futures::channel::mpsc::Sender<String>| async move {
+                let Some(daemon) = daemon().await else {
+                    return futures::future::pending().await;
+                };
+                let Ok(mut signals) = daemon.receive_open_settings().await else {
+                    return futures::future::pending().await;
+                };
+                while let Some(signal) = signals.next().await {
+                    if let Ok(args) = signal.args() {
+                        if output.send(args.page.clone()).await.is_err() {
+                            return;
+                        }
                     }
                 }
-            }
-            futures::future::pending().await
-        })
+                futures::future::pending().await
+            },
+        )
     })
 }

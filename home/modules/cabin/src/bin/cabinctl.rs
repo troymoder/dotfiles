@@ -28,6 +28,20 @@ enum Command {
     },
     /// What a panel button draws, as JSON.
     Bar { kind: Bar },
+    /// The window switcher up, or its pick moved on: what Alt+Tab and
+    /// Alt+Shift+Tab run. Letting go of the modifier raises the pick.
+    Switch {
+        direction: Direction,
+        /// Cards with a picture of each window (Super+Tab), not icons.
+        #[arg(long)]
+        previews: bool,
+    },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum Direction {
+    Next,
+    Prev,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -68,15 +82,37 @@ impl Bar {
 async fn main() {
     let cli = Cli::parse();
     let Some(daemon) = cabin::bus::daemon().await else {
-        eprintln!("cabinctl: cannot reach {} on the session bus", cabin::bus::NAME);
+        eprintln!(
+            "cabinctl: cannot reach {} on the session bus",
+            cabin::bus::NAME
+        );
         std::process::exit(1);
     };
     let result = match cli.command {
         Command::Toggle { panel } => daemon.toggle(panel.name()).await,
-        Command::Open { panel, menu } => daemon.open(panel.name(), menu.as_deref().unwrap_or_default()).await,
+        Command::Open { panel, menu } => {
+            daemon
+                .open(panel.name(), menu.as_deref().unwrap_or_default())
+                .await
+        }
         Command::Close => daemon.close().await,
         Command::Volume { steps } => daemon.volume(steps).await,
         Command::Bar { kind } => daemon.bar(kind.name()).await.map(|bar| println!("{bar}")),
+        Command::Switch {
+            direction,
+            previews,
+        } => {
+            daemon
+                .switch(
+                    if matches!(direction, Direction::Prev) {
+                        -1
+                    } else {
+                        1
+                    },
+                    previews,
+                )
+                .await
+        }
     };
     if let Err(err) = result {
         eprintln!("cabinctl: {err}");

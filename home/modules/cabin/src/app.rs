@@ -321,10 +321,12 @@ where
 
 fn load_networks(scan: bool) -> app::Task<Message> {
     Task::future(async move {
-        let networks = backend::network::networks(scan).await.unwrap_or_else(|err| {
-            tracing::warn!("cannot list Wi-Fi networks: {err}");
-            None
-        });
+        let networks = backend::network::networks(scan)
+            .await
+            .unwrap_or_else(|err| {
+                tracing::warn!("cannot list Wi-Fi networks: {err}");
+                None
+            });
         cosmic::action::app(Message::Networks(networks))
     })
 }
@@ -361,7 +363,9 @@ impl App {
 
     /// Sampling fast while something shows what it samples.
     pub(crate) fn sync_fast(&self) {
-        backend::system::set_fast(self.system_shown || (self.shown && self.card == Some(Card::Graphics)));
+        backend::system::set_fast(
+            self.system_shown || (self.shown && self.card == Some(Card::Graphics)),
+        );
     }
 
     /// The output's level and mute as shown (while dragged, the dragged
@@ -380,7 +384,8 @@ impl App {
     }
 
     fn ask(&mut self, pending: Pending) {
-        self.pending.retain(|(p, _)| std::mem::discriminant(p) != std::mem::discriminant(&pending));
+        self.pending
+            .retain(|(p, _)| std::mem::discriminant(p) != std::mem::discriminant(&pending));
         self.pending.push((pending, Instant::now()));
     }
 
@@ -396,9 +401,17 @@ impl App {
             let done = match pending {
                 Pending::Wifi(on) => network.is_some_and(|n| n.wifi_enabled == *on),
                 Pending::Bluetooth(on) => bluetooth.is_some_and(|b| b.powered == *on),
-                Pending::Device(path, on) => bluetooth.is_some_and(|b| b.devices.iter().any(|d| &d.path == path && d.connected == *on)),
-                Pending::Profile(profile) => power.and_then(|p| p.profiles.as_ref()).is_some_and(|p| &p.active == profile),
-                Pending::Dns(choice) => network.and_then(|n| n.dns.as_ref()).is_some_and(|d| &d.choice == choice),
+                Pending::Device(path, on) => bluetooth.is_some_and(|b| {
+                    b.devices
+                        .iter()
+                        .any(|d| &d.path == path && d.connected == *on)
+                }),
+                Pending::Profile(profile) => power
+                    .and_then(|p| p.profiles.as_ref())
+                    .is_some_and(|p| &p.active == profile),
+                Pending::Dns(choice) => network
+                    .and_then(|n| n.dns.as_ref())
+                    .is_some_and(|d| &d.choice == choice),
             };
             !done
         });
@@ -424,10 +437,18 @@ impl App {
                 let _ = seen;
             }
         }
-        self.streams.retain(|(stream, seen)| !stream.indices.is_empty() || seen.elapsed() < KEEP);
+        self.streams
+            .retain(|(stream, seen)| !stream.indices.is_empty() || seen.elapsed() < KEEP);
         while self.streams.len() > MOST {
             // The one unheard of longest, among those not playing now.
-            let Some(oldest) = self.streams.iter().enumerate().filter(|(_, (s, _))| s.indices.is_empty()).min_by_key(|(_, (_, seen))| *seen).map(|(i, _)| i) else {
+            let Some(oldest) = self
+                .streams
+                .iter()
+                .enumerate()
+                .filter(|(_, (s, _))| s.indices.is_empty())
+                .min_by_key(|(_, (_, seen))| *seen)
+                .map(|(i, _)| i)
+            else {
                 break;
             };
             self.streams.remove(oldest);
@@ -437,9 +458,23 @@ impl App {
     /// The battery of the Bluetooth device a sink is, by the address in
     /// the sink's name (`bluez_output.AA_BB_...`).
     pub(crate) fn sink_battery(&self, sink: &str) -> Option<u8> {
-        let address = sink.strip_prefix("bluez_output.")?.split('.').next()?.replace('_', ":").to_uppercase();
+        let address = sink
+            .strip_prefix("bluez_output.")?
+            .split('.')
+            .next()?
+            .replace('_', ":")
+            .to_uppercase();
         let bluetooth = self.bluetooth.as_ref()?;
-        bluetooth.devices.iter().find(|d| d.path.as_str().to_uppercase().ends_with(&address.replace(':', "_"))).and_then(|d| d.battery)
+        bluetooth
+            .devices
+            .iter()
+            .find(|d| {
+                d.path
+                    .as_str()
+                    .to_uppercase()
+                    .ends_with(&address.replace(':', "_"))
+            })
+            .and_then(|d| d.battery)
     }
 
     fn output_device_battery(&self) -> Option<u8> {
@@ -449,16 +484,38 @@ impl App {
 
     /// What the panel's status button draws.
     pub(crate) fn status_bar(&self, open: bool) -> bus::StatusBar {
-        let icons = self.bar_icons().into_iter().map(|(icon, tip)| (icon.to_owned(), tip)).collect();
-        let battery = self.power.as_ref().and_then(|p| p.battery.as_ref()).map(|b| (b.icon(), b.percentage as f32, Self::battery_tip(b)));
-        let battery_low = self.power.as_ref().and_then(|p| p.battery.as_ref()).is_some_and(|b| b.low());
-        bus::StatusBar { open, icons, headphones: self.output_device_battery(), battery, battery_low, privacy: self.privacy_pill() }
+        let icons = self
+            .bar_icons()
+            .into_iter()
+            .map(|(icon, tip)| (icon.to_owned(), tip))
+            .collect();
+        let battery = self
+            .power
+            .as_ref()
+            .and_then(|p| p.battery.as_ref())
+            .map(|b| (b.icon(), b.percentage as f32, Self::battery_tip(b)));
+        let battery_low = self
+            .power
+            .as_ref()
+            .and_then(|p| p.battery.as_ref())
+            .is_some_and(|b| b.low());
+        bus::StatusBar {
+            open,
+            icons,
+            headphones: self.output_device_battery(),
+            battery,
+            battery_low,
+            privacy: self.privacy_pill(),
+        }
     }
 
     /// What the System button draws: CPU and memory as two small bars.
     pub(crate) fn system_bar(&self, open: bool) -> bus::SystemBar {
         let Some(system) = &self.system else {
-            return bus::SystemBar { open, ..bus::SystemBar::default() };
+            return bus::SystemBar {
+                open,
+                ..bus::SystemBar::default()
+            };
         };
         let memory = system.memory.used as f32 / system.memory.total.max(1) as f32;
         bus::SystemBar {
@@ -480,27 +537,50 @@ impl App {
         let mut icons = Vec::new();
         if let Some(graphics) = &self.graphics {
             if graphics.power < 2 {
-                let state = if graphics.power == 0 { "dedicated GPU active" } else { "dedicated GPU asleep" };
+                let state = if graphics.power == 0 {
+                    "dedicated GPU active"
+                } else {
+                    "dedicated GPU asleep"
+                };
                 icons.push((graphics.icon(), format!("Graphics: {state}")));
             }
         }
         if let Some(bluetooth) = &self.bluetooth {
             if bluetooth.powered {
-                icons.push(("bluetooth-active-symbolic", format!("Bluetooth: {}", bluetooth.status())));
+                icons.push((
+                    "bluetooth-active-symbolic",
+                    format!("Bluetooth: {}", bluetooth.status()),
+                ));
             }
         }
         if let Some(profiles) = self.power.as_ref().and_then(|p| p.profiles.as_ref()) {
             let profile = &profiles.active;
-            icons.push((crate::backend::power::Profiles::icon(profile), format!("Power mode: {}", crate::backend::power::Profiles::name(profile))));
+            icons.push((
+                crate::backend::power::Profiles::icon(profile),
+                format!(
+                    "Power mode: {}",
+                    crate::backend::power::Profiles::name(profile)
+                ),
+            ));
         }
         match &self.network {
-            Some(network) if network.wired.is_some() => icons.push(("network-wired-symbolic", format!("Wired: {}", network.wired_status()))),
-            Some(network) if network.has_wifi => icons.push((network.wifi_icon(), format!("Wi-Fi: {}", network.wifi_status()))),
+            Some(network) if network.wired.is_some() => icons.push((
+                "network-wired-symbolic",
+                format!("Wired: {}", network.wired_status()),
+            )),
+            Some(network) if network.has_wifi => icons.push((
+                network.wifi_icon(),
+                format!("Wi-Fi: {}", network.wifi_status()),
+            )),
             Some(_) => {}
             None => icons.push(("network-wireless-offline-symbolic", "No network".to_owned())),
         }
         if let Some(output) = self.audio.as_ref().and_then(|a| a.output) {
-            let level = if output.muted { "muted".to_owned() } else { format!("{:.0} %", output.level * 100.0) };
+            let level = if output.muted {
+                "muted".to_owned()
+            } else {
+                format!("{:.0} %", output.level * 100.0)
+            };
             icons.push((output.output_icon(), format!("Volume: {level}")));
         }
         icons
@@ -513,9 +593,21 @@ impl App {
         } else if battery.held {
             "plugged in, not charging".to_owned()
         } else if battery.charging {
-            battery.time_left.map_or_else(|| "charging".to_owned(), |s| format!("charging, {} in {}", battery.target_name().to_lowercase(), duration(s)))
+            battery.time_left.map_or_else(
+                || "charging".to_owned(),
+                |s| {
+                    format!(
+                        "charging, {} in {}",
+                        battery.target_name().to_lowercase(),
+                        duration(s)
+                    )
+                },
+            )
         } else {
-            battery.time_left.map_or_else(|| "on battery".to_owned(), |s| format!("{} left", duration(s)))
+            battery.time_left.map_or_else(
+                || "on battery".to_owned(),
+                |s| format!("{} left", duration(s)),
+            )
         };
         format!("Battery {:.0} %, {state}", battery.percentage)
     }
@@ -523,13 +615,21 @@ impl App {
     /// The pill on the panel while something watches or listens: amber,
     /// coral when the screen is shared. Pressing it opens the Privacy menu.
     fn privacy_pill(&self) -> Option<bus::PrivacyPill> {
-        let camera = !self.privacy.camera.is_empty() || self.cameras.as_ref().is_some_and(|c| c.list.iter().any(|c| !c.users.is_empty()));
+        let camera = !self.privacy.camera.is_empty()
+            || self
+                .cameras
+                .as_ref()
+                .is_some_and(|c| c.list.iter().any(|c| !c.users.is_empty()));
         let mic = !self.privacy.microphone.is_empty();
         let screen = self.privacy.sharing_screen();
         if !(camera || mic || screen) {
             return None;
         }
-        let mic_muted = self.audio.as_ref().and_then(|a| a.input).is_some_and(|i| i.muted);
+        let mic_muted = self
+            .audio
+            .as_ref()
+            .and_then(|a| a.input)
+            .is_some_and(|i| i.muted);
         let mut parts = Vec::new();
         if screen {
             parts.push("screen shared");
@@ -542,7 +642,13 @@ impl App {
         }
         let tip = parts.join(", ");
         let tip = tip[..1].to_uppercase() + &tip[1..];
-        Some(bus::PrivacyPill { screen, camera, mic, mic_muted, tip })
+        Some(bus::PrivacyPill {
+            screen,
+            camera,
+            mic,
+            mic_muted,
+            tip,
+        })
     }
 }
 
@@ -568,21 +674,30 @@ impl App {
             }
             Message::ToggleAllSections => {
                 // All folded: all open. Else all folded.
-                if Section::ALL.iter().all(|s| self.sections_closed.contains(s)) {
+                if Section::ALL
+                    .iter()
+                    .all(|s| self.sections_closed.contains(s))
+                {
                     self.sections_closed.clear();
                 } else {
                     self.sections_closed = Section::ALL.to_vec();
                 }
             }
             Message::DebugCoral => {
-                self.privacy.screen.push(backend::privacy::Share { app: "Chromium".to_owned(), what: "Sharing entire screen · eDP-1".to_owned(), node: 0 });
+                self.privacy.screen.push(backend::privacy::Share {
+                    app: "Chromium".to_owned(),
+                    what: "Sharing entire screen · eDP-1".to_owned(),
+                    node: 0,
+                });
                 self.privacy.microphone.push("Discord".to_owned());
                 if !self.shown {
                     return self.open_popup();
                 }
             }
             Message::DebugBubble => {
-                let level = self.brightness.map_or(0.6, |b| b.level as f32 / b.max.max(1) as f32);
+                let level = self
+                    .brightness
+                    .map_or(0.6, |b| b.level as f32 / b.max.max(1) as f32);
                 self.adjusting = Some(Adjusting::Brightness(level));
                 self.released = None;
                 if !self.shown {
@@ -594,7 +709,11 @@ impl App {
             Message::ToggleNightLight => {
                 // Shown switched at once; it takes a second or two on screen.
                 if let Some(night) = self.night.as_mut() {
-                    night.on = if night.on.is_some() { None } else { Some(night.temperature) };
+                    night.on = if night.on.is_some() {
+                        None
+                    } else {
+                        Some(night.temperature)
+                    };
                 }
                 return Task::future(async {
                     backend::nightlight::toggle().await;
@@ -608,10 +727,12 @@ impl App {
             // A peak shows at once and falls back over a few tenths of a second.
             Message::MicLevel(level) => self.mic_level = level.max(self.mic_level * 0.75),
             Message::OutputLevel(level) => self.output_level = level.max(self.output_level * 0.75),
-            Message::StreamLevel(app, level) => match self.stream_levels.iter_mut().find(|(a, _)| *a == app) {
-                Some((_, shown)) => *shown = level.max(*shown * 0.75),
-                None => self.stream_levels.push((app, level)),
-            },
+            Message::StreamLevel(app, level) => {
+                match self.stream_levels.iter_mut().find(|(a, _)| *a == app) {
+                    Some((_, shown)) => *shown = level.max(*shown * 0.75),
+                    None => self.stream_levels.push((app, level)),
+                }
+            }
             Message::CycleProfile => {
                 let Some(profiles) = self.power.as_ref().and_then(|p| p.profiles.as_ref()) else {
                     return Task::none();
@@ -622,13 +743,23 @@ impl App {
                     _ => profiles.active.clone(),
                 };
                 let available = &profiles.available;
-                let Some(next) = available.iter().position(|p| *p == active).map(|i| available[(i + 1) % available.len()].clone()).or_else(|| available.first().cloned()) else {
+                let Some(next) = available
+                    .iter()
+                    .position(|p| *p == active)
+                    .map(|i| available[(i + 1) % available.len()].clone())
+                    .or_else(|| available.first().cloned())
+                else {
                     return Task::none();
                 };
                 return self.update(Message::SetProfile(next));
             }
             Message::SetChargeLimit(enabled) => {
-                if let Some(limit) = self.power.as_mut().and_then(|p| p.battery.as_mut()).and_then(|b| b.limit.as_mut()) {
+                if let Some(limit) = self
+                    .power
+                    .as_mut()
+                    .and_then(|p| p.battery.as_mut())
+                    .and_then(|b| b.limit.as_mut())
+                {
                     limit.enabled = enabled;
                 }
                 return Task::future(async move {
@@ -636,17 +767,30 @@ impl App {
                     cosmic::action::app(Message::Done)
                 });
             }
-            Message::ToggleIdle(timeout) => self.idle_open = if self.idle_open == Some(timeout) { None } else { Some(timeout) },
+            Message::ToggleIdle(timeout) => {
+                self.idle_open = if self.idle_open == Some(timeout) {
+                    None
+                } else {
+                    Some(timeout)
+                }
+            }
             Message::SetIdle(timeout, ms) => {
                 self.idle_open = None;
-                if let Some(i) = backend::idle::Timeout::ALL.iter().position(|t| *t == timeout) {
+                if let Some(i) = backend::idle::Timeout::ALL
+                    .iter()
+                    .position(|t| *t == timeout)
+                {
                     self.idle[i] = ms;
                 }
                 backend::idle::set(timeout, ms);
             }
             Message::OpenCard(card) => {
                 // Opened as a press on it would: whatever it reads is read.
-                let load = if self.card != Some(card) { self.update(Message::ToggleCard(card)) } else { Task::none() };
+                let load = if self.card != Some(card) {
+                    self.update(Message::ToggleCard(card))
+                } else {
+                    Task::none()
+                };
                 if !self.shown {
                     return Task::batch([load, self.open_popup()]);
                 }
@@ -669,7 +813,9 @@ impl App {
                 let Some((shown, _)) = self.output_shown() else {
                     return Task::none();
                 };
-                let mut level = (shown * 100.0 + steps * 5.0).round().clamp(0.0, backend::audio::MAX * 100.0);
+                let mut level = (shown * 100.0 + steps * 5.0)
+                    .round()
+                    .clamp(0.0, backend::audio::MAX * 100.0);
                 if (level - 100.0).abs() < 3.0 {
                     level = 100.0;
                 }
@@ -687,9 +833,16 @@ impl App {
             Message::CloseMenu => self.menu = None,
             Message::Tick => {
                 self.settle();
-                let now: Vec<backend::audio::Stream> = self.audio.as_ref().map(|a| a.streams.clone()).unwrap_or_default();
+                let now: Vec<backend::audio::Stream> = self
+                    .audio
+                    .as_ref()
+                    .map(|a| a.streams.clone())
+                    .unwrap_or_default();
                 self.remember_streams(&now);
-                if self.released.is_some_and(|at| at.elapsed() > Duration::from_millis(1500)) {
+                if self
+                    .released
+                    .is_some_and(|at| at.elapsed() > Duration::from_millis(1500))
+                {
                     self.released = None;
                     self.adjusting = None;
                 }
@@ -697,7 +850,8 @@ impl App {
             Message::Done => {}
 
             Message::Network(network) => {
-                let refresh = self.card == Some(Card::Network) && self.network.as_ref() != Some(&network);
+                let refresh =
+                    self.card == Some(Card::Network) && self.network.as_ref() != Some(&network);
                 self.network = Some(network);
                 self.settle();
                 if refresh {
@@ -751,7 +905,13 @@ impl App {
                 self.sizes_open = false;
             }
             Message::ToggleSizes => self.sizes_open = !self.sizes_open,
-            Message::Frame(frame) => self.preview = Some(widget::image::Handle::from_rgba(frame.width, frame.height, frame.rgba.as_ref().clone())),
+            Message::Frame(frame) => {
+                self.preview = Some(widget::image::Handle::from_rgba(
+                    frame.width,
+                    frame.height,
+                    frame.rgba.as_ref().clone(),
+                ))
+            }
             Message::SetCameraControl(node, id, value) => {
                 self.released = None;
                 self.adjusting = Some(Adjusting::Camera(node.clone(), id, value));
@@ -786,8 +946,12 @@ impl App {
                 // Keep a level being dragged; take the rest.
                 let mut audio = audio;
                 match &self.adjusting {
-                    Some(Adjusting::Output(_)) => audio.output = self.audio.as_ref().and_then(|a| a.output).or(audio.output),
-                    Some(Adjusting::Input(_)) => audio.input = self.audio.as_ref().and_then(|a| a.input).or(audio.input),
+                    Some(Adjusting::Output(_)) => {
+                        audio.output = self.audio.as_ref().and_then(|a| a.output).or(audio.output)
+                    }
+                    Some(Adjusting::Input(_)) => {
+                        audio.input = self.audio.as_ref().and_then(|a| a.input).or(audio.input)
+                    }
                     Some(Adjusting::Stream(app, level)) => {
                         if let Some(stream) = audio.streams.iter_mut().find(|s| s.app == *app) {
                             stream.level = *level;
@@ -832,7 +996,9 @@ impl App {
                 }
                 if card == Card::Display {
                     self.night = backend::nightlight::read();
-                    return Task::future(async { cosmic::action::app(Message::Displays(backend::display::now().await)) });
+                    return Task::future(async {
+                        cosmic::action::app(Message::Displays(backend::display::now().await))
+                    });
                 }
             }
             Message::ToggleWifi => {
@@ -847,8 +1013,12 @@ impl App {
                 let device = networks.device.clone();
                 return Task::future(async move {
                     match backend::network::join(device, network).await {
-                        Ok(backend::network::Joined::Connecting) => cosmic::action::app(Message::Done),
-                        Ok(backend::network::Joined::NeedsSettings) => cosmic::action::app(Message::Settings(Some("wireless"))),
+                        Ok(backend::network::Joined::Connecting) => {
+                            cosmic::action::app(Message::Done)
+                        }
+                        Ok(backend::network::Joined::NeedsSettings) => {
+                            cosmic::action::app(Message::Settings(Some("wireless")))
+                        }
                         Err(err) => {
                             tracing::warn!("cannot join the network: {err}");
                             cosmic::action::app(Message::Done)
@@ -856,14 +1026,22 @@ impl App {
                     }
                 });
             }
-            Message::Disconnect(active) => return run("disconnect", backend::network::disconnect(active)),
+            Message::Disconnect(active) => {
+                return run("disconnect", backend::network::disconnect(active));
+            }
             Message::ToggleWired => {
                 let Some(network) = &self.network else {
                     return Task::none();
                 };
                 return match (&network.wired, &network.wired_device) {
-                    (Some(wired), _) => run("disconnect the cable", backend::network::disconnect(wired.active.clone())),
-                    (None, Some(device)) => run("connect the cable", backend::network::connect_wired(device.clone(), None)),
+                    (Some(wired), _) => run(
+                        "disconnect the cable",
+                        backend::network::disconnect(wired.active.clone()),
+                    ),
+                    (None, Some(device)) => run(
+                        "connect the cable",
+                        backend::network::connect_wired(device.clone(), None),
+                    ),
                     (None, None) => Task::none(),
                 };
             }
@@ -871,10 +1049,22 @@ impl App {
                 let Some(network) = &self.network else {
                     return Task::none();
                 };
-                let connection = network.wired_connections.iter().find(|c| c.settings == settings);
-                return match (up, connection.and_then(|c| c.active.clone()), &network.wired_device) {
-                    (false, Some(active), _) => run("disconnect the cable", backend::network::disconnect(active)),
-                    (true, None, Some(device)) => run("connect the cable", backend::network::connect_wired(device.clone(), Some(settings))),
+                let connection = network
+                    .wired_connections
+                    .iter()
+                    .find(|c| c.settings == settings);
+                return match (
+                    up,
+                    connection.and_then(|c| c.active.clone()),
+                    &network.wired_device,
+                ) {
+                    (false, Some(active), _) => {
+                        run("disconnect the cable", backend::network::disconnect(active))
+                    }
+                    (true, None, Some(device)) => run(
+                        "connect the cable",
+                        backend::network::connect_wired(device.clone(), Some(settings)),
+                    ),
                     _ => Task::none(),
                 };
             }
@@ -885,11 +1075,17 @@ impl App {
                 let on = !bluetooth.powered;
                 let adapter = bluetooth.adapter.clone();
                 self.ask(Pending::Bluetooth(on));
-                return run("turn Bluetooth on or off", backend::bluetooth::set_powered(adapter, on));
+                return run(
+                    "turn Bluetooth on or off",
+                    backend::bluetooth::set_powered(adapter, on),
+                );
             }
             Message::ConnectDevice(device, on) => {
                 self.ask(Pending::Device(device.clone(), on));
-                return run("connect the device", backend::bluetooth::connect(device, on));
+                return run(
+                    "connect the device",
+                    backend::bluetooth::connect(device, on),
+                );
             }
             Message::SetProfile(profile) => {
                 self.ask(Pending::Profile(profile.clone()));
@@ -969,7 +1165,12 @@ impl App {
                         }
                     }
                     Some(Adjusting::Camera(node, id, value)) => {
-                        if let Some(control) = self.cameras.as_mut().and_then(|c| c.list.iter_mut().find(|c| c.node == *node)).and_then(|c| c.controls.iter_mut().find(|c| c.id == *id)) {
+                        if let Some(control) = self
+                            .cameras
+                            .as_mut()
+                            .and_then(|c| c.list.iter_mut().find(|c| c.node == *node))
+                            .and_then(|c| c.controls.iter_mut().find(|c| c.id == *id))
+                        {
                             control.value = *value;
                         }
                     }
@@ -981,7 +1182,11 @@ impl App {
                 self.released = None;
                 self.adjusting = Some(Adjusting::Output(level));
                 // Moving it unmutes.
-                let muted = self.audio.as_mut().and_then(|a| a.output.as_mut()).is_some_and(|o| std::mem::replace(&mut o.muted, false));
+                let muted = self
+                    .audio
+                    .as_mut()
+                    .and_then(|a| a.output.as_mut())
+                    .is_some_and(|o| std::mem::replace(&mut o.muted, false));
                 return Task::future(async move {
                     if muted {
                         backend::audio::set_output_mute(false).await;
@@ -993,7 +1198,11 @@ impl App {
             Message::SetInput(level) => {
                 self.released = None;
                 self.adjusting = Some(Adjusting::Input(level));
-                let muted = self.audio.as_mut().and_then(|a| a.input.as_mut()).is_some_and(|i| std::mem::replace(&mut i.muted, false));
+                let muted = self
+                    .audio
+                    .as_mut()
+                    .and_then(|a| a.input.as_mut())
+                    .is_some_and(|i| std::mem::replace(&mut i.muted, false));
                 return Task::future(async move {
                     if muted {
                         backend::audio::set_input_mute(false).await;
@@ -1035,7 +1244,11 @@ impl App {
                 });
             }
             Message::ToggleStreamCard(app) => {
-                self.stream_card = if self.stream_card.as_ref() == Some(&app) { None } else { Some(app) };
+                self.stream_card = if self.stream_card.as_ref() == Some(&app) {
+                    None
+                } else {
+                    Some(app)
+                };
             }
             Message::MoveStream(indices, sink) => {
                 self.stream_card = None;
@@ -1067,11 +1280,19 @@ impl App {
                 backend::audio::save_hidden("players", &self.hidden_players);
             }
             Message::ShowAllWifi => self.wifi_all = true,
-            Message::Media(service, control) => return run("control the player", backend::media::control(service, control)),
+            Message::Media(service, control) => {
+                return run(
+                    "control the player",
+                    backend::media::control(service, control),
+                );
+            }
             Message::Seek(service, position) => self.seeking = Some((service, position)),
             Message::RaisePlayer(service) => {
                 let close = self.close_popup();
-                return Task::batch([close, run("raise the player", backend::media::raise(service))]);
+                return Task::batch([
+                    close,
+                    run("raise the player", backend::media::raise(service)),
+                ]);
             }
             Message::SetShuffle(service, shuffle) => {
                 if let Some(media) = self.media.iter_mut().find(|m| m.service == service) {
@@ -1097,7 +1318,11 @@ impl App {
                 }
             }
             Message::StreamIcon(app) => {
-                let found = self.streams.iter().find(|(s, _)| s.app == app).map(|(s, _)| (s.indices.clone(), s.muted));
+                let found = self
+                    .streams
+                    .iter()
+                    .find(|(s, _)| s.app == app)
+                    .map(|(s, _)| (s.indices.clone(), s.muted));
                 let Some((indices, muted)) = found else {
                     return Task::none();
                 };
@@ -1111,7 +1336,11 @@ impl App {
             }
             Message::SoloStream(app) => {
                 self.menu = None;
-                let streams: Vec<(String, Vec<u32>, bool)> = self.streams.iter().map(|(s, _)| (s.app.clone(), s.indices.clone(), s.muted)).collect();
+                let streams: Vec<(String, Vec<u32>, bool)> = self
+                    .streams
+                    .iter()
+                    .map(|(s, _)| (s.app.clone(), s.indices.clone(), s.muted))
+                    .collect();
                 let mut tasks = Vec::new();
                 {
                     for (name, indices, _) in streams {
@@ -1139,7 +1368,10 @@ impl App {
                 };
                 media.position = position as i64;
                 media.at = Instant::now();
-                return run("seek", backend::media::seek(service, media.track.clone(), position as i64));
+                return run(
+                    "seek",
+                    backend::media::seek(service, media.track.clone(), position as i64),
+                );
             }
             Message::Screenshot => {
                 backend::session::screenshot();
@@ -1194,15 +1426,27 @@ impl App {
         if self.shown {
             subscriptions.push(backend::camera::subscription().map(Message::Cameras));
             // The level meters, only while they're on screen.
-            subscriptions.push(Subscription::run_with("@DEFAULT_SOURCE@".to_owned(), backend::audio::levels).map(Message::MicLevel));
-            subscriptions.push(Subscription::run_with("@DEFAULT_MONITOR@".to_owned(), backend::audio::levels).map(Message::OutputLevel));
+            subscriptions.push(
+                Subscription::run_with("@DEFAULT_SOURCE@".to_owned(), backend::audio::levels)
+                    .map(Message::MicLevel),
+            );
+            subscriptions.push(
+                Subscription::run_with("@DEFAULT_MONITOR@".to_owned(), backend::audio::levels)
+                    .map(Message::OutputLevel),
+            );
             // A meter per app that's playing, from one of its streams.
             for (stream, _) in &self.streams {
                 if stream.corked || self.hidden_apps.contains(&stream.app) {
                     continue;
                 }
                 if let Some(index) = stream.indices.first() {
-                    subscriptions.push(Subscription::run_with((*index, stream.app.clone()), backend::audio::stream_levels).map(|(app, level)| Message::StreamLevel(app, level)));
+                    subscriptions.push(
+                        Subscription::run_with(
+                            (*index, stream.app.clone()),
+                            backend::audio::stream_levels,
+                        )
+                        .map(|(app, level)| Message::StreamLevel(app, level)),
+                    );
                 }
             }
         }
@@ -1212,12 +1456,19 @@ impl App {
         // The camera on show streams pictures only while its menu is open.
         if self.shown && self.card == Some(Card::Camera) {
             if let Some(camera) = self.preview_camera() {
-                subscriptions.push(Subscription::run_with((camera.node.clone(), self.preview_size), backend::camera::preview).map(Message::Frame));
+                subscriptions.push(
+                    Subscription::run_with(
+                        (camera.node.clone(), self.preview_size),
+                        backend::camera::preview,
+                    )
+                    .map(Message::Frame),
+                );
             }
         }
         let playing = self.shown && self.media.iter().any(|m| m.playing && m.seekable());
         if !self.pending.is_empty() || self.released.is_some() || playing {
-            subscriptions.push(iced::time::every(Duration::from_millis(500)).map(|_| Message::Tick));
+            subscriptions
+                .push(iced::time::every(Duration::from_millis(500)).map(|_| Message::Tick));
         }
         Subscription::batch(subscriptions)
     }

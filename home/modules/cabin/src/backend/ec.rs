@@ -5,14 +5,22 @@
 //! it (past the 20 V the kernel hears of), and the CPU package's power.
 //! Nothing where it doesn't run.
 
-#[zbus::proxy(interface = "dev.troy.Cabin.EC1", default_service = "dev.troy.Cabin.EC", default_path = "/dev/troy/Cabin/EC")]
+#[zbus::proxy(
+    interface = "dev.troy.Cabin.EC1",
+    default_service = "dev.troy.Cabin.EC",
+    default_path = "/dev/troy/Cabin/EC"
+)]
 trait CabinEc {
     fn charger_watts(&self) -> zbus::Result<f64>;
     fn cpu_watts(&self) -> zbus::Result<f64>;
 }
 
 async fn proxy(conn: &zbus::Connection) -> Option<CabinEcProxy<'_>> {
-    CabinEcProxy::builder(conn).cache_properties(zbus::proxy::CacheProperties::No).build().await.ok()
+    CabinEcProxy::builder(conn)
+        .cache_properties(zbus::proxy::CacheProperties::No)
+        .build()
+        .await
+        .ok()
 }
 
 /// What the EC agreed with the charger, when one is plugged in.

@@ -13,25 +13,146 @@ macro_rules! tabler {
 }
 
 const ICONS: &[(&str, &[u8])] = tabler![
-    "activity", "arrows-shuffle", "battery", "battery-1", "battery-2", "battery-3", "battery-4", "battery-charging",
-    "bell-off", "bluetooth", "bolt", "box", "brand-chrome", "brand-firefox", "brand-spotify", "camera", "check",
-    "chevron-down", "chevron-left", "chevron-right", "chevron-up", "cloud", "cloud-rain", "cloud-snow", "cloud-storm",
-    "cloud-fog", "device-desktop", "device-laptop-off", "download", "eye", "eye-off", "gauge", "heart", "keyboard", "leaf", "lock", "logout",
-    "map-pin", "message-circle", "microphone", "microphone-off", "moon", "mouse", "music", "network", "package", "photo",
-    "plane", "player-pause", "player-play", "player-skip-back", "player-skip-forward", "plug-connected", "power",
-    "refresh", "repeat", "repeat-once", "rocket", "scale", "server", "settings", "sun", "sunset", "sunrise", "volume",
-    "volume-2", "volume-off", "wifi", "wifi-0", "wifi-1", "wifi-2", "wifi-off", "wind", "x", "headphones", "device-speaker",
-    "device-gamepad", "device-ipad", "device-mobile", "headset",
+    "activity",
+    "arrows-shuffle",
+    "battery",
+    "battery-1",
+    "battery-2",
+    "battery-3",
+    "battery-4",
+    "battery-charging",
+    "bell-off",
+    "bluetooth",
+    "bolt",
+    "box",
+    "brand-chrome",
+    "brand-firefox",
+    "brand-spotify",
+    "camera",
+    "check",
+    "chevron-down",
+    "chevron-left",
+    "chevron-right",
+    "chevron-up",
+    "cloud",
+    "cloud-rain",
+    "cloud-snow",
+    "cloud-storm",
+    "cloud-fog",
+    "device-desktop",
+    "device-laptop-off",
+    "download",
+    "eye",
+    "eye-off",
+    "gauge",
+    "heart",
+    "keyboard",
+    "leaf",
+    "lock",
+    "logout",
+    "map-pin",
+    "message-circle",
+    "microphone",
+    "microphone-off",
+    "moon",
+    "mouse",
+    "music",
+    "network",
+    "package",
+    "photo",
+    "plane",
+    "player-pause",
+    "player-play",
+    "player-skip-back",
+    "player-skip-forward",
+    "plug-connected",
+    "power",
+    "refresh",
+    "repeat",
+    "repeat-once",
+    "rocket",
+    "scale",
+    "server",
+    "settings",
+    "sun",
+    "sunset",
+    "sunrise",
+    "volume",
+    "volume-2",
+    "volume-off",
+    "wifi",
+    "wifi-0",
+    "wifi-1",
+    "wifi-2",
+    "wifi-off",
+    "wind",
+    "x",
+    "headphones",
+    "device-speaker",
+    "device-gamepad",
+    "device-ipad",
+    "device-mobile",
+    "headset",
     // The known apps' marks, and the rest of the design's glyphs.
-    "brand-discord", "brand-steam", "brand-vlc", "brand-zoom", "brand-slack", "brand-telegram", "brand-teams",
-    "brand-matrix", "brand-twitch", "message-chatbot", "app-window", "cpu", "cpu-2", "stack-2", "database",
-    "arrows-down-up", "propeller", "device-desktop-analytics", "shield-lock", "shield-check", "screen-share",
-    "player-stop", "usb", "video", "user", "info-circle", "contrast", "focus-2", "exposure", "temperature",
-    "brightness-half", "layout-grid", "terminal-2", "folder", "camera-off", "adjustments", "plug", "aspect-ratio", "trash", "bell", "key",
+    "brand-discord",
+    "brand-steam",
+    "brand-vlc",
+    "brand-zoom",
+    "brand-slack",
+    "brand-telegram",
+    "brand-teams",
+    "brand-matrix",
+    "brand-twitch",
+    "message-chatbot",
+    "app-window",
+    "cpu",
+    "cpu-2",
+    "stack-2",
+    "database",
+    "arrows-down-up",
+    "propeller",
+    "device-desktop-analytics",
+    "shield-lock",
+    "shield-check",
+    "screen-share",
+    "player-stop",
+    "usb",
+    "video",
+    "user",
+    "info-circle",
+    "contrast",
+    "focus-2",
+    "exposure",
+    "temperature",
+    "brightness-half",
+    "layout-grid",
+    "terminal-2",
+    "folder",
+    "camera-off",
+    "adjustments",
+    "plug",
+    "aspect-ratio",
+    "trash",
+    "bell",
+    "key",
+    // The window switcher's apps.
+    "brand-vscode",
+    "file-text",
     // Tabler 3.51: the dedicated and the integrated GPU.
-    "gpu", "gpu-2", "battery-eco",
+    "gpu",
+    "gpu-2",
+    "battery-eco",
     // Panels: the pin, the System panel's folding and warnings, programs.
-    "pin", "pinned", "arrows-diagonal", "arrows-diagonal-minimize-2", "alert-triangle", "brand-rust", "terminal",
+    "pin",
+    "pinned",
+    "arrows-diagonal",
+    "arrows-diagonal-minimize-2",
+    "alert-triangle",
+    "brand-rust",
+    "terminal",
+    // Capture: the toolbar's region and record.
+    "marquee-2",
+    "player-record",
 ];
 
 /// Icons Tabler doesn't draw, made in its style (24 grid, 2 px round
@@ -40,7 +161,11 @@ const OWN: &[(&str, &[u8])] = &[("ethernet", include_bytes!("../../data/icons/et
 
 /// The SVG for a Tabler or own icon name.
 fn svg(name: &str) -> Option<&'static [u8]> {
-    ICONS.iter().chain(OWN.iter()).find(|(n, _)| *n == name).map(|(_, bytes)| *bytes)
+    ICONS
+        .iter()
+        .chain(OWN.iter())
+        .find(|(n, _)| *n == name)
+        .map(|(_, bytes)| *bytes)
 }
 
 /// A symbolic name as the desktop knows it, to the Tabler icon drawn for it.
@@ -49,14 +174,18 @@ fn translate(name: &str) -> &str {
         "emblem-system-symbolic" => "settings",
         "network-wired-symbolic" => "ethernet",
         "network-server-symbolic" => "server",
-        "network-wireless-symbolic" | "network-wireless-signal-excellent-symbolic" | "network-wireless-signal-good-symbolic" => "wifi",
+        "network-wireless-symbolic"
+        | "network-wireless-signal-excellent-symbolic"
+        | "network-wireless-signal-good-symbolic" => "wifi",
         "network-wireless-signal-ok-symbolic" => "wifi-2",
         "network-wireless-signal-weak-symbolic" => "wifi-1",
         "network-wireless-signal-none-symbolic" => "wifi-0",
         "network-wireless-offline-symbolic" | "network-wireless-disabled-symbolic" => "wifi-off",
         "network-wireless-encrypted-symbolic" => "lock",
         "bluetooth-symbolic" | "bluetooth-active-symbolic" => "bluetooth",
-        "video-display-symbolic" | "video-joined-displays-symbolic" | "display-brightness-off-symbolic" => "device-desktop",
+        "video-display-symbolic"
+        | "video-joined-displays-symbolic"
+        | "display-brightness-off-symbolic" => "device-desktop",
         "display-brightness-symbolic" => "sun",
         "keyboard-brightness-symbolic" | "input-keyboard-symbolic" => "keyboard",
         "input-mouse-symbolic" => "mouse",
@@ -112,8 +241,13 @@ pub fn known(name: &str) -> bool {
 }
 
 pub fn icon(name: &str, size: u16) -> widget::icon::Icon {
-    let bytes = svg(translate(name)).or_else(|| svg("activity")).expect("an icon");
-    widget::icon::from_svg_bytes(bytes).symbolic(true).icon().size(size)
+    let bytes = svg(translate(name))
+        .or_else(|| svg("activity"))
+        .expect("an icon");
+    widget::icon::from_svg_bytes(bytes)
+        .symbolic(true)
+        .icon()
+        .size(size)
 }
 
 /// The brand mark of a player, if Tabler draws one.

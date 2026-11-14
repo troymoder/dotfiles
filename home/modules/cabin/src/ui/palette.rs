@@ -14,7 +14,12 @@ pub const fn rgb_(r: u8, g: u8, b: u8) -> Color {
 }
 
 pub const fn rgba(r: u8, g: u8, b: u8, a: f32) -> Color {
-    Color { r: r as f32 / 255.0, g: g as f32 / 255.0, b: b as f32 / 255.0, a }
+    Color {
+        r: r as f32 / 255.0,
+        g: g as f32 / 255.0,
+        b: b as f32 / 255.0,
+        a,
+    }
 }
 
 /// A panel: the wallpaper's shadow navy as a glass tint, over the frost the

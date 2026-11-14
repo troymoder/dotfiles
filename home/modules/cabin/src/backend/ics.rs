@@ -77,7 +77,9 @@ fn unfold(text: &str) -> Vec<String> {
 fn parse_when(params: &str, value: &str) -> Option<(NaiveDate, Option<NaiveTime>)> {
     let value = value.trim();
     if params.contains("VALUE=DATE") || value.len() == 8 {
-        return NaiveDate::parse_from_str(value, "%Y%m%d").ok().map(|d| (d, None));
+        return NaiveDate::parse_from_str(value, "%Y%m%d")
+            .ok()
+            .map(|d| (d, None));
     }
     let utc = value.ends_with('Z');
     let value = value.trim_end_matches('Z');
@@ -86,7 +88,11 @@ fn parse_when(params: &str, value: &str) -> Option<(NaiveDate, Option<NaiveTime>
         chrono::Local.from_utc_datetime(&naive)
     } else if let Some(tzid) = params.split(';').find_map(|p| p.strip_prefix("TZID=")) {
         match tzid.parse::<chrono_tz::Tz>() {
-            Ok(tz) => tz.from_local_datetime(&naive).single().map(|t| t.with_timezone(&chrono::Local)).unwrap_or_else(|| chrono::Local.from_utc_datetime(&naive)),
+            Ok(tz) => tz
+                .from_local_datetime(&naive)
+                .single()
+                .map(|t| t.with_timezone(&chrono::Local))
+                .unwrap_or_else(|| chrono::Local.from_utc_datetime(&naive)),
             Err(_) => chrono::Local.from_local_datetime(&naive).single()?,
         }
     } else {
@@ -128,30 +134,48 @@ fn expand(raw: &Raw, from: NaiveDate, to: NaiveDate, out: &mut Calendar) {
     };
     let mut push = |date: NaiveDate| {
         if date >= from && date <= to && !raw.exdates.contains(&date) {
-            out.entry(date).or_default().push(Event { date, time, summary: raw.summary.clone() });
+            out.entry(date).or_default().push(Event {
+                date,
+                time,
+                summary: raw.summary.clone(),
+            });
         }
     };
     let Some(rule) = &raw.rrule else {
         push(start);
         return;
     };
-    let field = |key: &str| rule.split(';').find_map(|p| p.strip_prefix(key).and_then(|v| v.strip_prefix('=')).map(str::to_owned));
+    let field = |key: &str| {
+        rule.split(';').find_map(|p| {
+            p.strip_prefix(key)
+                .and_then(|v| v.strip_prefix('='))
+                .map(str::to_owned)
+        })
+    };
     let freq = field("FREQ").unwrap_or_default();
-    let interval: i64 = field("INTERVAL").and_then(|v| v.parse().ok()).unwrap_or(1).max(1);
+    let interval: i64 = field("INTERVAL")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1)
+        .max(1);
     let count: Option<usize> = field("COUNT").and_then(|v| v.parse().ok());
-    let until: Option<NaiveDate> = field("UNTIL").and_then(|v| parse_when("", &v)).map(|(d, _)| d);
+    let until: Option<NaiveDate> = field("UNTIL")
+        .and_then(|v| parse_when("", &v))
+        .map(|(d, _)| d);
     let bydays: Vec<Weekday> = field("BYDAY")
         .map(|v| {
             v.split(',')
-                .filter_map(|d| match d.trim_start_matches(|c: char| c.is_ascii_digit() || c == '-' || c == '+') {
-                    "MO" => Some(Weekday::Mon),
-                    "TU" => Some(Weekday::Tue),
-                    "WE" => Some(Weekday::Wed),
-                    "TH" => Some(Weekday::Thu),
-                    "FR" => Some(Weekday::Fri),
-                    "SA" => Some(Weekday::Sat),
-                    "SU" => Some(Weekday::Sun),
-                    _ => None,
+                .filter_map(|d| {
+                    match d.trim_start_matches(|c: char| c.is_ascii_digit() || c == '-' || c == '+')
+                    {
+                        "MO" => Some(Weekday::Mon),
+                        "TU" => Some(Weekday::Tue),
+                        "WE" => Some(Weekday::Wed),
+                        "TH" => Some(Weekday::Thu),
+                        "FR" => Some(Weekday::Fri),
+                        "SA" => Some(Weekday::Sat),
+                        "SU" => Some(Weekday::Sun),
+                        _ => None,
+                    }
                 })
                 .collect()
         })
@@ -164,11 +188,23 @@ fn expand(raw: &Raw, from: NaiveDate, to: NaiveDate, out: &mut Calendar) {
             break;
         }
         let hit = match freq.as_str() {
-            "WEEKLY" if !bydays.is_empty() => bydays.contains(&date.weekday()) && ((date - start).num_days() / 7) % interval == 0,
+            "WEEKLY" if !bydays.is_empty() => {
+                bydays.contains(&date.weekday()) && ((date - start).num_days() / 7) % interval == 0
+            }
             "WEEKLY" => (date - start).num_days() % (7 * interval) == 0,
             "DAILY" => (date - start).num_days() % interval == 0,
-            "MONTHLY" => date.day() == start.day() && ((date.year() - start.year()) as i64 * 12 + (date.month() as i64 - start.month() as i64)) % interval == 0,
-            "YEARLY" => date.day() == start.day() && date.month() == start.month() && (date.year() - start.year()) as i64 % interval == 0,
+            "MONTHLY" => {
+                date.day() == start.day()
+                    && ((date.year() - start.year()) as i64 * 12
+                        + (date.month() as i64 - start.month() as i64))
+                        % interval
+                        == 0
+            }
+            "YEARLY" => {
+                date.day() == start.day()
+                    && date.month() == start.month()
+                    && (date.year() - start.year()) as i64 % interval == 0
+            }
             _ => date == start,
         };
         if hit {
@@ -241,7 +277,11 @@ pub fn load() -> Calendar {
 }
 
 pub fn subscription() -> Subscription<Calendar> {
-    Subscription::run(|| super::watch(Duration::from_secs(600), super::no_changes, || async { Some(tokio::task::spawn_blocking(load).await.unwrap_or_default()) }))
+    Subscription::run(|| {
+        super::watch(Duration::from_secs(600), super::no_changes, || async {
+            Some(tokio::task::spawn_blocking(load).await.unwrap_or_default())
+        })
+    })
 }
 
 #[cfg(test)]
@@ -252,10 +292,25 @@ mod tests {
     fn simple_and_weekly() {
         let text = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART;VALUE=DATE:20261113\r\nSUMMARY:Invoice \r\n due\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART;TZID=Africa/Johannesburg:20261102T093000\r\nRRULE:FREQ=WEEKLY;BYDAY=MO,WE\r\nSUMMARY:Standup\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
         let mut cal = Calendar::new();
-        parse(text, NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(), NaiveDate::from_ymd_opt(2026, 11, 30).unwrap(), &mut cal);
-        assert_eq!(cal[&NaiveDate::from_ymd_opt(2026, 11, 13).unwrap()][0].summary, "Invoice due");
-        assert_eq!(cal[&NaiveDate::from_ymd_opt(2026, 11, 13).unwrap()][0].when(), "All day");
-        let standups: usize = cal.values().flatten().filter(|e| e.summary == "Standup").count();
+        parse(
+            text,
+            NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 11, 30).unwrap(),
+            &mut cal,
+        );
+        assert_eq!(
+            cal[&NaiveDate::from_ymd_opt(2026, 11, 13).unwrap()][0].summary,
+            "Invoice due"
+        );
+        assert_eq!(
+            cal[&NaiveDate::from_ymd_opt(2026, 11, 13).unwrap()][0].when(),
+            "All day"
+        );
+        let standups: usize = cal
+            .values()
+            .flatten()
+            .filter(|e| e.summary == "Standup")
+            .count();
         assert_eq!(standups, 9);
         assert!(cal.contains_key(&NaiveDate::from_ymd_opt(2026, 11, 4).unwrap()));
         assert!(!cal.contains_key(&NaiveDate::from_ymd_opt(2026, 11, 3).unwrap()));
