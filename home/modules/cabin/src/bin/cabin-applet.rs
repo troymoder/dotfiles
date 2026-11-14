@@ -26,6 +26,7 @@ enum Kind {
 }
 
 fn main() -> cosmic::iced::Result {
+    cabin::hand_over_to_dev();
     cabin::prefer_integrated_gpu();
     let cli = Cli::parse();
     cabin::init_logging();

@@ -80,6 +80,7 @@ impl Bar {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    cabin::hand_over_to_dev();
     let cli = Cli::parse();
     let Some(daemon) = cabin::bus::daemon().await else {
         eprintln!(

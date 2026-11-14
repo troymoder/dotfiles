@@ -11,6 +11,13 @@
       channel.enable = false;
       settings.experimental-features = ["nix-command" "flakes" "flake-self-attrs"];
       settings.trusted-users = ["@wheel" "root"];
+      gc = {
+        automatic = true;
+        dates = "weekly";
+        options = "--delete-older-than 14d";
+      };
+      # Timer instead of auto-optimise-store so builds don't pay the hardlinking cost.
+      optimise.automatic = true;
     };
 
     hardware.enableAllFirmware = lib.mkDefault true;

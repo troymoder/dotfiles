@@ -3,7 +3,8 @@
 # on the panel; cabinctl drives them from a shell.
 {
   lib,
-  rustPlatform,
+  makeRustPlatform,
+  rust,
   libcosmicAppHook,
   pipewire,
   wireplumber,
@@ -15,6 +16,11 @@
   cantarell-fonts,
   fetchFromGitHub,
 }: let
+  # The official Rust binaries, same version as nixpkgs' rustc: that one is
+  # built from source against a shared libLLVM and took 2m31s to build this
+  # crate, against 1m41s with these.
+  rustPlatform = makeRustPlatform {inherit (rust.packages.prebuilt) rustc cargo;};
+
   # Tabler Icons, the outline set, embedded by name at build time.
   tabler-icons = fetchFromGitHub {
     owner = "tabler";
@@ -32,7 +38,7 @@ in
       filter = path: _type: let
         name = baseNameOf path;
       in
-        name != "target" && name != ".dev" && name != "package.nix" && !(lib.hasPrefix "run-dev" name) && name != "reload-dev.sh";
+        name != "target" && name != ".dev" && name != "package.nix" && !(lib.hasPrefix "run-dev" name) && name != "reload-dev.sh" && name != "build-dev.sh";
     };
 
     # All of Cargo.lock vendored in one fixed-output build (git crates too), so
@@ -46,6 +52,12 @@ in
     doCheck = false;
 
     TABLER_ICONS_DIR = "${tabler-icons}/icons/outline";
+
+    # Incremental (Cargo.toml, for the dev loop) only costs time in a clean build.
+    CARGO_PROFILE_RELEASE_INCREMENTAL = "false";
+    # Link through Nix's cc wrapper, not the bundled rust-lld: the wrapper is
+    # what puts the libraries' store paths in RUNPATH.
+    NIX_RUSTFLAGS = "-C linker-features=-lld";
 
     # It shells out to these for sound and cover art, and cabin-capture to
     # ffmpeg (recordings, with PulseAudio for their sound; the headless one

@@ -606,6 +606,7 @@ fn dialog_button<'a>(label: String, primary: bool, message: Message) -> Element<
 }
 
 fn main() -> iced::Result {
+    cabin::hand_over_to_dev();
     cabin::prefer_integrated_gpu();
     let (to_window, from_assuan) = futures::channel::mpsc::unbounded();
     let _ = EVENTS.set(Mutex::new(Some(from_assuan)));

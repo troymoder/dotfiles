@@ -24,6 +24,36 @@ pub const CLOCK_ID: &str = "dev.troy.Cabin.Clock";
 pub const SYSTEM_ID: &str = "dev.troy.Cabin.System";
 pub const WORKSPACES_ID: &str = "dev.troy.Cabin.Workspaces";
 
+/// The dev loop: while `$XDG_RUNTIME_DIR/cabin-dev` links to a checkout
+/// (`reload-dev.sh` makes it; `reload-dev.sh off` and logging out remove it),
+/// an installed binary becomes that checkout's build of itself, through its
+/// `run-dev.sh`. So the shortcuts, D-Bus activation, the panel and gpg-agent
+/// all run the dev build. An exec keeps the pid and the inherited fds (the
+/// panel's socket, pinentry's pipes). Run first thing in `main`.
+pub fn hand_over_to_dev() {
+    use std::os::unix::process::CommandExt;
+    let Some(checkout) = std::env::var_os("XDG_RUNTIME_DIR")
+        .and_then(|dir| std::fs::read_link(std::path::Path::new(&dir).join("cabin-dev")).ok())
+    else {
+        return;
+    };
+    let Ok(exe) = std::env::current_exe() else { return };
+    if exe.starts_with(&checkout) {
+        return;
+    }
+    // The Nix build's binaries are `.cabind-wrapped` and so on, behind a wrapper.
+    let Some(name) = exe.file_name().and_then(|n| n.to_str()) else { return };
+    let name = name.trim_start_matches('.').trim_end_matches("-wrapped");
+    if !checkout.join("target/release").join(name).exists() {
+        return;
+    }
+    let err = std::process::Command::new(checkout.join("run-dev.sh"))
+        .arg(name)
+        .args(std::env::args_os().skip(1))
+        .exec();
+    eprintln!("cabin: cannot run the dev build, staying on this one: {err}");
+}
+
 /// Drawing on the integrated GPU, and never so much as opening the discrete
 /// one. iced asks wgpu for the high-performance adapter unless told
 /// otherwise, which on a hybrid laptop is the dGPU, kept awake (and drawing

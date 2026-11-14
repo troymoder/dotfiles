@@ -258,6 +258,7 @@ impl cosmic::Application for Dialog {
 }
 
 fn main() -> iced::Result {
+    cabin::hand_over_to_dev();
     cabin::prefer_integrated_gpu();
     let mut args = std::env::args().skip(1);
     let mode: u32 = args.next().and_then(|m| m.parse().ok()).unwrap_or(0);

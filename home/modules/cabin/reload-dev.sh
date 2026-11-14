@@ -1,27 +1,33 @@
 #!/usr/bin/env bash
-# Reload the dev build: the daemon restarted (detached, logging to
-# $XDG_RUNTIME_DIR/cabind-dev.log), and the panel's buttons restarted
-# without tripping cosmic-session's backoff.
+# The dev loop: build this checkout, then run its build everywhere. While
+# $XDG_RUNTIME_DIR/cabin-dev links here, every installed cabin binary hands
+# over to it first thing (cabin::hand_over_to_dev): the daemon, the panel
+# buttons, the shortcuts (capture, the window switcher), D-Bus activation and
+# gpg-agent's pinentry. Logging out ends it.
+#
+#   reload-dev.sh          build, restart the daemon and the panel buttons
+#   reload-dev.sh daemon   build, restart only the daemon
+#   reload-dev.sh off      back to the installed build
+#
+# The daemon runs as cabind.service either way: journalctl --user -u cabind -f
 #
 # cosmic-session (launch-pad) restarts a dead process after 2^restarts * random(0..10) ms
 # and never resets that counter. But when one of cosmic-panel / cosmic-notifications
 # dies, the OTHER is stopped and started as a brand-new process (counter 0), at the
 # same instant. So alternate: kill the one that was NOT killed last time.
-#
-# `reload-dev.sh daemon` restarts just the daemon.
 set -euo pipefail
 here=$(dirname "$(realpath "$0")")
-log=${XDG_RUNTIME_DIR:-/tmp}/cabind-dev.log
+marker=${XDG_RUNTIME_DIR:?}/cabin-dev
 
-# The installed daemon would hold the bus name: the dev one takes over.
-systemctl --user stop cabind.service 2>/dev/null || true
-pkill -f 'target/release/cabind$' || true
-sleep 0.5
-# Under the user manager, so it runs with the session's environment as the
-# installed service does, not the shell's (an editor's may pick the dGPU).
-systemctl --user stop cabind-dev 2>/dev/null || true
-systemd-run --user --unit=cabind-dev --collect --quiet -p StandardOutput=file:"$log" -p StandardError=file:"$log" "$here/run-dev.sh" cabind
-echo "daemon started (log: $log)"
+if [ "${1:-}" = off ]; then
+  rm -f "$marker"
+else
+  "$here/build-dev.sh"
+  ln -sfn "$here" "$marker"
+fi
+
+systemctl --user restart cabind.service
+echo "daemon restarted (journalctl --user -u cabind -f)"
 [ "${1:-}" = daemon ] && exit 0
 
 state=${XDG_CACHE_HOME:-$HOME/.cache}/cabin-reload-last
@@ -35,7 +41,7 @@ for _ in $(seq 1 15); do
   panel=$(pgrep -f '^cosmic-panel$' | head -1 || true)
   up=0
   for kind in status clock system workspaces; do
-    if [ -n "$panel" ] && pgrep -P "$panel" -f "target/release/cabin-applet --kind $kind\$" >/dev/null; then up=$((up + 1)); fi
+    if [ -n "$panel" ] && pgrep -P "$panel" -f "cabin-applet(-wrapped)? --kind $kind\$" >/dev/null; then up=$((up + 1)); fi
   done
   if [ "$up" = 4 ]; then
     echo "buttons running under panel $panel"; exit 0

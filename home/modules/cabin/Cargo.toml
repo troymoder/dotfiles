@@ -31,7 +31,10 @@ zbus = { version = "5.14.0", default-features = false, features = ["tokio", "p2p
 [profile.release]
 opt-level = 3
 panic = "abort"
-lto = "thin"
+# Thin LTO re-optimised all of libcosmic once per binary: a one-line edit took
+# 1m50s, 5s like this. package.nix turns incremental off for the clean build.
+lto = false
+incremental = true
 
 # Same pins as cosmic-applets epoch-1.8.0, to match the installed panel.
 [patch."https://github.com/smithay/client-toolkit.git"]
