@@ -8,12 +8,9 @@ rustPlatform.buildRustPackage {
   pname = "cabin-ec";
   version = "0.1.0";
 
-  src = lib.cleanSourceWith {
-    src = ./.;
-    filter = path: _type: let
-      name = baseNameOf path;
-    in
-      name != "target" && name != "package.nix";
+  src = lib.fileset.toSource {
+    root = ./.;
+    fileset = lib.fileset.unions [./Cargo.toml ./Cargo.lock ./src];
   };
 
   cargoLock.lockFile = ./Cargo.lock;

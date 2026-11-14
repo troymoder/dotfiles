@@ -18,6 +18,7 @@ pub mod graphics;
 pub mod ics;
 pub mod idle;
 pub mod latest;
+pub mod live;
 pub mod location;
 pub mod media;
 pub mod network;

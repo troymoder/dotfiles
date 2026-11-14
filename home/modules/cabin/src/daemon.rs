@@ -12,7 +12,8 @@
 //! alone and lets the keyboard go, so the windows under work as ever.
 //!
 //! The volume's on-screen bar is a surface of its own, near the bottom,
-//! and so is the window switcher, over the whole screen while it shows.
+//! and so is the window switcher, over the whole screen while it shows,
+//! and the workspace overview.
 
 use std::time::Duration;
 
@@ -20,7 +21,10 @@ use cosmic::{
     Element, Task, app,
     iced::{
         self, Alignment, Background, Color, Length, Limits, Point, Rectangle, Size, Subscription,
-        event,
+        event::{
+            self, PlatformSpecific,
+            wayland::{Event as WaylandEvent, LayerEvent},
+        },
         platform_specific::shell::commands::{
             blur::blur,
             keyboard_shortcuts_inhibit::inhibit_shortcuts,
@@ -41,10 +45,10 @@ use cosmic::cctk::sctk::reexports::calloop;
 
 use crate::{
     app::{self as controls, App, Card},
-    backend::{self, windows},
+    backend::{self, live, windows},
     bus::{self, Owner, Request},
-    capture,
     clock::{self, Clock},
+    overview::{self, Overview},
     switcher::{self, Switcher},
     ui::{self, GAP, PANE_WIDTH, palette, popup::Placed},
 };
@@ -111,6 +115,12 @@ const SWITCHER_LATE: Duration = Duration::from_millis(300);
 /// How long Alt or Super must be held before the switcher shows: a quick
 /// Alt+Tab switches without it flashing up.
 const SWITCHER_REVEAL: Duration = Duration::from_millis(120);
+/// How long after the overview goes a window it raises is: while the
+/// overview holds the keyboard, cosmic-comp lets no window have it, and
+/// the raise goes over another connection, so it could overtake the destroy.
+// shortcut: a fixed wait, not a sign the surface is gone; raise it if a
+// raise from the overview ever lands without the focus.
+const OVERVIEW_RAISE: Duration = Duration::from_millis(50);
 
 #[derive(Clone, Debug)]
 pub enum Message {
@@ -137,9 +147,11 @@ pub enum Message {
     /// The volume bar's time is up, unless something showed it since.
     OsdDone(u64),
     Switcher(switcher::Message),
+    Overview(overview::Message),
     Windows(windows::Event),
-    /// The capture thread, run while the switcher shows windows' pictures.
-    Captured(capture::Event),
+    /// The live pictures' thread: its ear, or a picture while the overview
+    /// or Super+Tab shows them.
+    Live(live::Event),
     Done,
 }
 
@@ -174,10 +186,19 @@ pub struct Daemon {
     windows: Vec<windows::Window>,
     window_commands: Option<calloop::channel::SyncSender<windows::Command>>,
     switcher: Option<Switcher>,
-    /// The capture thread's ear, while it takes the switcher's pictures,
-    /// and the pictures as last taken, by window id.
-    capture: Option<calloop::channel::SyncSender<capture::Command>>,
-    thumbs: std::collections::HashMap<String, widget::image::Handle>,
+    /// Each output's workspaces, and the overview while it shows.
+    workspaces: Vec<Vec<windows::Workspace>>,
+    overview: Option<Overview>,
+    /// The live pictures of the windows and workspaces, by window id or
+    /// workspace key, while the overview or Super+Tab shows them.
+    pictures: std::collections::HashMap<
+        String,
+        iced::platform_specific::shell::subsurface_widget::SubsurfaceBuffer,
+    >,
+    /// The live pictures' thread's ear, and whether it was last told to
+    /// take them.
+    live_commands: Option<calloop::channel::SyncSender<bool>>,
+    live_on: bool,
 }
 
 /// A task of a part's, as the daemon's.
@@ -504,10 +525,7 @@ impl Daemon {
         }
         self.current = None;
         let id = window::Id::unique();
-        let mut switcher = Switcher::new(id, here, step, previews);
-        // Last time's pictures, until this time's come.
-        switcher.thumbs = self.thumbs.clone();
-        self.switcher = Some(switcher);
+        self.switcher = Some(Switcher::new(id, here, step, previews));
         let make = get_layer_surface(SctkLayerSurfaceSettings {
             id,
             layer: Layer::Overlay,
@@ -534,8 +552,6 @@ impl Daemon {
         let Some(switcher) = self.switcher.take() else {
             return Task::none();
         };
-        // The capture thread ends with its ear gone.
-        self.capture = None;
         // The compositor's shortcuts back, then the surface gone.
         let destroy = inhibit_shortcuts(false)
             .map(|()| done())
@@ -632,6 +648,198 @@ impl Daemon {
         }
     }
 
+    /// The overview up over the work area (the panel stays), or down.
+    /// It takes the keyboard exclusively, so a workspace switched to
+    /// doesn't take it; on the top layer, not the overlay, so the launcher
+    /// can when typing brings it up. Its namespace is cosmic-workspaces':
+    /// while a surface by that name shows, cosmic-comp draws no windows on
+    /// its output (the desktop shows through), leaves it out of workspace
+    /// pictures, and switches workspaces without sliding.
+    fn toggle_overview(&mut self) -> app::Task<Message> {
+        if self.overview.is_some() {
+            return self.close_overview(None);
+        }
+        self.current = None;
+        let id = window::Id::unique();
+        let order = self.windows.iter().map(|w| w.id.clone()).collect();
+        self.overview = Some(Overview::new(id, order));
+        // At once: its live pictures (the thread is warm) come before the
+        // surface is up, about 120 ms; the update's end tells the thread.
+        get_layer_surface(SctkLayerSurfaceSettings {
+            id,
+            layer: Layer::Top,
+            keyboard_interactivity: KeyboardInteractivity::Exclusive,
+            input_zone: None,
+            anchor: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
+            output: IcedOutput::Active,
+            namespace: "cosmic-workspace-overview".into(),
+            exclusive_zone: 0,
+            size: Some((None, None)),
+            size_limits: Limits::NONE.min_width(1.0).min_height(1.0),
+            ..Default::default()
+        })
+    }
+
+    /// The overview down, then `raise` raised.
+    fn close_overview(
+        &mut self,
+        raise: Option<cosmic::cctk::cosmic_protocols::toplevel_info::v1::client::zcosmic_toplevel_handle_v1::ZcosmicToplevelHandleV1>,
+    ) -> app::Task<Message> {
+        let Some(overview) = self.overview.take() else {
+            return Task::none();
+        };
+        let destroy = destroy_layer_surface(overview.id);
+        let (Some(handle), Some(commands)) = (raise, self.window_commands.clone()) else {
+            return destroy;
+        };
+        destroy.chain(Task::future(async move {
+            tokio::time::sleep(OVERVIEW_RAISE).await;
+            if commands
+                .try_send(windows::Command::Activate(handle))
+                .is_err()
+            {
+                tracing::warn!("the window thread is gone; nothing raised");
+            }
+            done()
+        }))
+    }
+
+    fn overview_update(&mut self, message: overview::Message) -> app::Task<Message> {
+        use overview::Message as M;
+        let Some(overview) = self.overview.as_mut() else {
+            return Task::none();
+        };
+        match message {
+            M::Press(window) => {
+                overview.drag = Some(overview::Drag {
+                    window,
+                    from: overview.cursor,
+                    moved: false,
+                });
+            }
+            // The one already showing: done here.
+            M::Space(space) if space.active => return self.close_overview(None),
+            M::Space(space) => self.send_window(windows::Command::ActivateWorkspace(space.handle)),
+            M::CloseWindow(id) => {
+                if let Some(window) = self.windows.iter().find(|w| w.id == id) {
+                    self.send_window(windows::Command::Close(window.handle.clone()));
+                }
+            }
+            M::Hover(target, true) => overview.hover = Some(target),
+            M::Hover(target, false) => {
+                if overview.hover.as_ref() == Some(&target) {
+                    overview.hover = None;
+                }
+            }
+            // The launcher takes the keyboard once it's up; till then the
+            // keys come here and go on to it (it adds them up).
+            M::Typed(text) => {
+                overview.typed = true;
+                backend::spawn("cosmic-launcher", &["input", &text], &[]);
+            }
+            M::Focus(id, true) if id == overview.id => overview.focused = true,
+            // Lost to the launcher that typing brought up: out of its way.
+            // Lost any other way (a press on the bar takes it a moment, a
+            // panel of ours opened from there takes it): it stays.
+            M::Focus(id, false) if id == overview.id && overview.focused && overview.typed => {
+                return self.close_overview(None);
+            }
+            M::Focus(..) => {}
+            M::Scroll(delta) => {
+                let by = overview.scrolled(delta, std::time::Instant::now());
+                if by != 0 {
+                    self.overview_step(by);
+                }
+            }
+            M::Pin(space) => self.send_window(windows::Command::Pin(space.handle, !space.pinned)),
+            M::Close => return self.close_overview(None),
+        }
+        Task::none()
+    }
+
+    /// The pointer let go over the overview: a press that stayed put
+    /// raises its window, a drag onto a workspace moves it there.
+    fn overview_release(&mut self) -> app::Task<Message> {
+        let Some((drag, hover)) = self
+            .overview
+            .as_mut()
+            .and_then(|o| Some((o.drag.take()?, o.hover.clone())))
+        else {
+            return Task::none();
+        };
+        let Some(window) = self.windows.iter().find(|w| w.id == drag.window) else {
+            return Task::none();
+        };
+        let handle = window.handle.clone();
+        match (drag.moved, hover) {
+            (false, _) => self.close_overview(Some(handle)),
+            (true, Some(overview::Target::Space(space) | overview::Target::Pin(space))) => {
+                if let (false, Some(output)) =
+                    (window.workspaces.contains(&space.handle), space.output)
+                {
+                    // COSMIC keeps an empty workspace while it's the active
+                    // one: if this leaves the one it's on empty and unpinned,
+                    // follow the window, and the empty one goes at once.
+                    let left_empty = self
+                        .workspaces
+                        .iter()
+                        .flatten()
+                        .find(|from| from.active && window.workspaces.contains(&from.handle))
+                        .is_some_and(|from| {
+                            !from.pinned
+                                && !self.windows.iter().any(|w| {
+                                    w.id != window.id && w.workspaces.contains(&from.handle)
+                                })
+                        });
+                    self.send_window(windows::Command::Move(handle, space.handle.clone(), output));
+                    if left_empty {
+                        self.send_window(windows::Command::ActivateWorkspace(space.handle));
+                    }
+                }
+                Task::none()
+            }
+            (true, _) => Task::none(),
+        }
+    }
+
+    /// The overview's workspace moved `by` on, round from the last to the
+    /// first and back; steps taken before the compositor answers add up.
+    fn overview_step(&mut self, by: isize) {
+        let spaces = overview::group(&self.workspaces, &self.windows);
+        let Some(from) = self
+            .overview
+            .as_ref()
+            .and_then(|o| o.pending)
+            .or_else(|| spaces.iter().position(|s| s.active))
+        else {
+            return;
+        };
+        let to = (from as isize + by).rem_euclid(spaces.len() as isize) as usize;
+        if to == from {
+            return;
+        }
+        let handle = spaces[to].handle.clone();
+        if let Some(overview) = self.overview.as_mut() {
+            overview.pending = Some(to);
+        }
+        self.send_window(windows::Command::ActivateWorkspace(handle));
+    }
+
+    /// Whether something shows live pictures.
+    fn live(&self) -> bool {
+        self.overview.is_some() || self.switcher.as_ref().is_some_and(|s| s.previews)
+    }
+
+    fn send_window(&self, command: windows::Command) {
+        if self
+            .window_commands
+            .as_ref()
+            .is_none_or(|commands| commands.try_send(command).is_err())
+        {
+            tracing::warn!("the window thread is gone");
+        }
+    }
+
     fn handle(&mut self, request: Request) -> app::Task<Message> {
         match request {
             Request::Toggle(owner) => {
@@ -656,6 +864,7 @@ impl Daemon {
             }
             Request::Close => self.current = None,
             Request::Switch(step, previews) => return self.open_switcher(step, previews),
+            Request::Overview => return self.toggle_overview(),
             Request::Volume(steps) => {
                 let step = lift(
                     self.controls.update(controls::Message::ScrollVolume(
@@ -927,8 +1136,11 @@ impl cosmic::Application for Daemon {
             windows: Vec::new(),
             window_commands: None,
             switcher: None,
-            capture: None,
-            thumbs: Default::default(),
+            workspaces: Vec::new(),
+            overview: None,
+            pictures: Default::default(),
+            live_commands: None,
+            live_on: false,
         };
         (daemon, Task::batch([font, debug_open()]))
     }
@@ -979,11 +1191,17 @@ impl cosmic::Application for Daemon {
                 }
                 if self.switcher.as_ref().is_some_and(|s| s.id == id) {
                     self.switcher = None;
-                    self.capture = None;
+                }
+                if self.overview.as_ref().is_some_and(|o| o.id == id) {
+                    self.overview = None;
                 }
                 Task::none()
             }
             Message::Cursor(id, at) => {
+                if let Some(overview) = self.overview.as_mut().filter(|o| o.id == id) {
+                    overview.moved(at);
+                    return Task::none();
+                }
                 if Some(id) != self.overlay {
                     return Task::none();
                 }
@@ -1003,9 +1221,10 @@ impl cosmic::Application for Daemon {
             }
             Message::Released => {
                 self.drag = None;
-                Task::none()
+                self.overview_release()
             }
             Message::Escape if self.switcher.is_some() => self.close_switcher(false),
+            Message::Escape if self.overview.is_some() => self.close_overview(None),
             Message::Escape => match self.current {
                 Some(Owner::Controls) => lift(
                     self.controls.update(controls::Message::Escape),
@@ -1073,13 +1292,35 @@ impl cosmic::Application for Daemon {
                 _ => Task::none(),
             },
             Message::Switcher(message) => self.switcher_update(message),
+            Message::Overview(message) => self.overview_update(message),
+            Message::Windows(windows::Event::Workspaces(groups)) => {
+                self.workspaces = groups;
+                if let Some(overview) = &mut self.overview {
+                    overview.pending = None;
+                }
+                Task::none()
+            }
             Message::Windows(windows::Event::Ready(commands)) => {
                 self.window_commands = Some(commands);
                 Task::none()
             }
             Message::Windows(windows::Event::Windows(list)) => {
-                self.thumbs.retain(|id, _| list.iter().any(|w| &w.id == id));
+                // The workspaces' pictures stay; those of windows gone, go.
+                self.pictures.retain(|id, _| {
+                    id.starts_with(windows::WORKSPACE_KEY) || list.iter().any(|w| &w.id == id)
+                });
                 self.windows = list;
+                // The overview's cards keep their order: a window new since
+                // it opened (a tray icon showing its window) goes at the end
+                // and stays there, focused or not; gone ones drop out.
+                if let Some(overview) = &mut self.overview {
+                    overview.order.retain(|id| self.windows.iter().any(|w| &w.id == id));
+                    for w in &self.windows {
+                        if !overview.order.contains(&w.id) {
+                            overview.order.push(w.id.clone());
+                        }
+                    }
+                }
                 match &mut self.switcher {
                     Some(switcher) => {
                         let before = switcher.windows.len();
@@ -1095,29 +1336,17 @@ impl cosmic::Application for Daemon {
                     None => Task::none(),
                 }
             }
-            Message::Captured(capture::Event::Ready(commands)) => {
-                // A fresh thread takes every window.
-                if self.switcher.is_some()
-                    && commands.try_send(capture::Command::Thumbnails).is_ok()
-                {
-                    self.capture = Some(commands);
+            Message::Live(live::Event::Ready(commands)) => {
+                self.live_on = false;
+                self.live_commands = Some(commands);
+                Task::none()
+            }
+            Message::Live(live::Event::Picture(key, buffer)) => {
+                if self.live() {
+                    self.pictures.insert(key, buffer);
                 }
                 Task::none()
             }
-            Message::Captured(capture::Event::Thumb(shot)) => {
-                let handle = widget::image::Handle::from_rgba(
-                    shot.image.width(),
-                    shot.image.height(),
-                    shot.image.as_raw().clone(),
-                );
-                if let Some(switcher) = &mut self.switcher {
-                    switcher.thumbs.insert(shot.name.clone(), handle.clone());
-                }
-                self.thumbs.insert(shot.name, handle);
-                Task::none()
-            }
-            // Its stills of the screens and its own window list aren't wanted here.
-            Message::Captured(_) => Task::none(),
             Message::Windows(windows::Event::Unavailable) => {
                 tracing::warn!("no toplevel protocols: the window switcher stays down");
                 self.window_commands = None;
@@ -1125,6 +1354,20 @@ impl cosmic::Application for Daemon {
             }
             Message::Done => Task::none(),
         };
+        // Pictures on while something shows them; let go of them after,
+        // so the compositor can free them.
+        let live = self.live();
+        if !live {
+            self.pictures.clear();
+        }
+        if live != self.live_on
+            && self
+                .live_commands
+                .as_ref()
+                .is_some_and(|commands| commands.try_send(live).is_ok())
+        {
+            self.live_on = live;
+        }
         Task::batch([task, self.sync()])
     }
 
@@ -1138,7 +1381,11 @@ impl cosmic::Application for Daemon {
         } else if Some(id) == self.osd {
             self.osd_view()
         } else if let Some(switcher) = self.switcher.as_ref().filter(|s| s.id == id) {
-            switcher.view().map(Message::Switcher)
+            switcher.view(&self.pictures).map(Message::Switcher)
+        } else if let Some(overview) = self.overview.as_ref().filter(|o| o.id == id) {
+            overview
+                .view(&self.windows, &self.workspaces, &self.pictures)
+                .map(Message::Overview)
         } else {
             widget::text("").into()
         }
@@ -1150,13 +1397,8 @@ impl cosmic::Application for Daemon {
             self.controls.subscription().map(Message::Controls),
             self.clock.subscription().map(Message::Clock),
             windows::subscription().map(Message::Windows),
-            match &self.switcher {
-                // From the start: the pictures take a moment to come.
-                Some(switcher) if switcher.previews => {
-                    capture::subscription().map(Message::Captured)
-                }
-                _ => Subscription::none(),
-            },
+            // Always: the thread stays warm, taking pictures only when told.
+            live::subscription().map(Message::Live),
             window::resize_events().map(|(id, size)| Message::Configured(id, size)),
             event::listen_with(|event, _, id| match event {
                 iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
@@ -1171,7 +1413,17 @@ impl cosmic::Application for Daemon {
                 }) => Some(Message::Escape),
                 iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
                     key, modifiers, ..
-                }) => switcher::key(&key, modifiers).map(Message::Switcher),
+                }) => switcher::key(&key, modifiers)
+                    .map(Message::Switcher)
+                    .or_else(|| overview::typed(&key, modifiers).map(Message::Overview)),
+                iced::Event::PlatformSpecific(PlatformSpecific::Wayland(WaylandEvent::Layer(
+                    focus @ (LayerEvent::Focused | LayerEvent::Unfocused),
+                    _,
+                    id,
+                ))) => Some(Message::Overview(overview::Message::Focus(
+                    id,
+                    matches!(focus, LayerEvent::Focused),
+                ))),
                 iced::Event::Keyboard(iced::keyboard::Event::ModifiersChanged(modifiers)) => Some(
                     Message::Switcher(switcher::Message::Modifiers(id, modifiers)),
                 ),

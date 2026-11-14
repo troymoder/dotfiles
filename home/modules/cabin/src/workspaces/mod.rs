@@ -33,7 +33,7 @@ use cosmic::{
 };
 use futures::{SinkExt, StreamExt, channel::mpsc, executor::block_on};
 
-use crate::{backend, ui::palette};
+use crate::ui::palette;
 
 /// A dot's diameter, and the active pill's length.
 const DOT: f32 = 7.0;
@@ -193,7 +193,13 @@ impl cosmic::Application for WorkspacesApp {
             }
             Message::Open => {
                 return Task::future(async {
-                    backend::session::overview().await;
+                    let toggled = match crate::bus::daemon().await {
+                        Some(daemon) => daemon.overview().await,
+                        None => Ok(()),
+                    };
+                    if let Err(err) = toggled {
+                        tracing::warn!("cannot toggle the overview: {err}");
+                    }
                     cosmic::action::app(Message::Done)
                 });
             }

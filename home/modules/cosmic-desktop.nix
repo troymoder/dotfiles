@@ -80,8 +80,8 @@ in {
         "com.system76.CosmicPanel.Panel/v1/opacity" = "0.0";
         # Otherwise the panel turns solid whenever a window is maximized.
         "com.system76.CosmicPanel.Panel/v1/keep_style_on_maximize" = "true";
-        # Bare Super opens the workspace overview; typing there searches via
-        # the launcher (action_on_typing below).
+        # Bare Super opens Cabin's workspace overview (WorkspaceOverview in
+        # system_actions below); typing there searches via the launcher.
         # Super+S takes a screenshot (replaces ToggleStacking); Super+Shift+S opens
         # Cabin's capture overlay (snip or record a region, window or screen), and
         # pressed again stops a recording.
@@ -124,17 +124,17 @@ in {
               "com.mitchellh.ghostty",
           ]
         '';
-        # Typing in the workspace overview opens the launcher with the typed text.
         "com.system76.CosmicComp/v1/workspaces" = ''
           (
               workspace_mode: OutputBound,
               workspace_layout: Vertical,
-              action_on_typing: OpenLauncher,
           )
         '';
-        # Super+T opens ghostty instead of cosmic-term, and Alt/Super+Tab bring up
-        # Cabin's window switcher. The file replaces the shipped map wholesale, so
-        # every other action is copied from it.
+        # Super+T opens a ghostty window in ~ instead of cosmic-term, Alt/Super+Tab
+        # bring up Cabin's window switcher, and the overview is Cabin's too
+        # (cosmic-workspaces was slow to show and crashed when toggled fast).
+        # The file replaces the shipped map wholesale, so every other action is
+        # copied from it.
         "com.system76.CosmicSettings.Shortcuts/v1/system_actions" = ''
           {
               /// Opens the application library
@@ -178,7 +178,7 @@ in {
               /// Toggles the screen reader
               ScreenReader: "busctl --user call com.system76.CosmicSettingsDaemon /com/system76/CosmicSettingsDaemon com.system76.CosmicSettingsDaemon ScreenReader",
               /// Opens the system default terminal
-              Terminal: "ghostty",
+              Terminal: "ghostty +new-window --working-directory=home",
               /// Toggles touchpad on/off
               TouchpadToggle: "cosmic-osd touchpad",
               /// Lowers the volume of the active output device
@@ -192,7 +192,7 @@ in {
               /// Opens the (alt+shift+tab) window switcher
               WindowSwitcherPrevious: "${config.modules.cabin.package}/bin/cabinctl switch prev",
               /// Opens the workspace overview
-              WorkspaceOverview: "cosmic-workspaces",
+              WorkspaceOverview: "${config.modules.cabin.package}/bin/cabinctl overview",
           }
         '';
         "com.system76.CosmicBackground/v1/same-on-all" = "true";

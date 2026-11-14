@@ -36,6 +36,8 @@ enum Command {
         #[arg(long)]
         previews: bool,
     },
+    /// The workspace overview up, or down if it's up: what Super runs.
+    Overview,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -98,6 +100,7 @@ async fn main() {
         }
         Command::Close => daemon.close().await,
         Command::Volume { steps } => daemon.volume(steps).await,
+        Command::Overview => daemon.overview().await,
         Command::Bar { kind } => daemon.bar(kind.name()).await.map(|bar| println!("{bar}")),
         Command::Switch {
             direction,

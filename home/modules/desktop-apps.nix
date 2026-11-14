@@ -56,7 +56,13 @@ in {
       };
       "applications/com.mitchellh.ghostty.desktop" = {
         source = pkgs.runCommand "ghostty-ghost.desktop" {} ''
-          sed "s|^Icon=.*|Icon=ghostty-ghost|" ${pkgs.ghostty}/share/applications/com.mitchellh.ghostty.desktop > $out
+          # `+new-window`, not `--gtk-single-instance=true`: it asks the running
+          # Ghostty for a window and sends the directory it was started in, so
+          # COSMIC Files' "Open in terminal" (which runs this in the folder)
+          # opens there; single-instance dropped the directory and opened in ~.
+          sed -e "s|^Icon=.*|Icon=ghostty-ghost|" \
+              -e "s|^Exec=ghostty .*|Exec=ghostty +new-window|" \
+            ${pkgs.ghostty}/share/applications/com.mitchellh.ghostty.desktop > $out
         '';
         force = true;
       };

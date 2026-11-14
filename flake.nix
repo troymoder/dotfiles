@@ -82,16 +82,6 @@
                 '';
             });
 
-            # Workspace overview: toggled quickly (Super held down, the panel dots
-            # clicked fast) it asked for a second screen capture while one was
-            # pending, which ends its Wayland connection, or hid surfaces whose GPU
-            # surface was still being set up, which panics in wgpu. The patch
-            # ignores toggles while a show or hide is under way and keeps one
-            # capture frame in flight per session.
-            cosmic-workspaces-epoch = prev.cosmic-workspaces-epoch.overrideAttrs (old: {
-              patches = (old.patches or []) ++ [./patches/cosmic-workspaces-fast-toggle.patch];
-            });
-
             sbctl = prev.sbctl.overrideAttrs (old: {
               version = "0.19-unstable-2026-xx-xx";
               src = final.fetchFromGitHub {

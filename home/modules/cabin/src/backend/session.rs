@@ -58,32 +58,3 @@ pub fn settings(page: Option<&str>, token: Option<&str>) {
     let args: Vec<&str> = page.into_iter().collect();
     spawn("cosmic-settings", &args, &env);
 }
-
-#[zbus::proxy(
-    interface = "org.freedesktop.DbusActivation",
-    default_service = "com.system76.CosmicWorkspaces",
-    default_path = "/com/system76/CosmicWorkspaces"
-)]
-trait Workspaces {
-    fn activate(
-        &self,
-        platform_data: std::collections::HashMap<&str, zbus::zvariant::Value<'_>>,
-    ) -> zbus::Result<()>;
-}
-
-/// The workspace overview, toggled: cosmic-workspaces keeps running once
-/// started and takes a toggle over the bus, which is instant and can't race
-/// a second start; only when it isn't there is it started.
-pub async fn overview() {
-    let toggled = async {
-        let conn = zbus::Connection::session().await?;
-        WorkspacesProxy::new(&conn)
-            .await?
-            .activate(std::collections::HashMap::new())
-            .await
-    };
-    if let Err(err) = toggled.await {
-        tracing::debug!("the overview is not running ({err}); starting it");
-        spawn("cosmic-workspaces", &[], &[]);
-    }
-}

@@ -14,6 +14,7 @@ pub mod bus;
 pub mod capture;
 pub mod clock;
 pub mod daemon;
+pub mod overview;
 pub mod switcher;
 pub mod ui;
 pub mod workspaces;

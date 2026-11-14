@@ -15,6 +15,7 @@
   wl-clipboard,
   cantarell-fonts,
   fetchFromGitHub,
+  libgbm,
 }: let
   # The official Rust binaries, same version as nixpkgs' rustc: that one is
   # built from source against a shared libLLVM and took 2m31s to build this
@@ -33,20 +34,19 @@ in
     pname = "cabin";
     version = "0.1.0";
 
-    src = lib.cleanSourceWith {
-      src = ./.;
-      filter = path: _type: let
-        name = baseNameOf path;
-      in
-        name != "target" && name != ".dev" && name != "package.nix" && !(lib.hasPrefix "run-dev" name) && name != "reload-dev.sh" && name != "build-dev.sh";
+    src = lib.fileset.toSource {
+      root = ./.;
+      fileset = lib.fileset.unions [./Cargo.toml ./Cargo.lock ./src ./data];
     };
 
     # All of Cargo.lock vendored in one fixed-output build (git crates too), so
     # evaluating the system doesn't fetch each libcosmic crate. Change the
     # Cargo.lock and the build fails on a hash mismatch: paste the new hash here.
-    cargoHash = "sha256-Ao4/5jquXGuXlbv0Wv+Fu5PDOK3mxV7c0+G40CrJ/lQ=";
+    cargoHash = "sha256-W8RS3BF/+WrdGfLe0s59Q6UHfWwQIBINY2vJ6xEOVjA=";
 
     nativeBuildInputs = [libcosmicAppHook];
+    # The live window pictures' GPU buffers.
+    buildInputs = [libgbm];
 
     # The tests want the dev loop (a camera, the session bus): the package just builds.
     doCheck = false;

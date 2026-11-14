@@ -5,4 +5,4 @@
 # copies the whole tree, .git and target/ (9 GB) included, into the store.
 cd "$(dirname "$(realpath "$0")")" || exit
 [ $# -eq 0 ] && set -- build --release
-exec nix develop --impure --expr 'with import <nixpkgs> {}; mkShell { nativeBuildInputs = [pkg-config]; buildInputs = [libxkbcommon wayland wayland-protocols]; }' -c cargo "$@"
+exec nix develop --impure --expr 'with import <nixpkgs> {}; mkShell { nativeBuildInputs = [pkg-config]; buildInputs = [libxkbcommon wayland wayland-protocols libgbm]; }' -c cargo "$@"

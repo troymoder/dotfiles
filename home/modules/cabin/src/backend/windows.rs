@@ -10,13 +10,22 @@
 //! a later raise. So its word moves a window to the front only once it has
 //! settled, on one window, with no raise of ours still landing; that's how
 //! a click, a new window or a raise that went nowhere gets in.
+//!
+//! The workspaces come along, for the overview, which also moves windows
+//! between them.
 
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashSet,
+    time::{Duration, Instant},
+};
 
 use cosmic::{
     cctk::{
         self,
         cosmic_protocols::{
+            workspace::v2::client::zcosmic_workspace_handle_v2::{
+                self, State as CosmicWorkspaceFlags,
+            },
             toplevel_info::v1::client::zcosmic_toplevel_handle_v1::{
                 State as Flag, ZcosmicToplevelHandleV1,
             },
@@ -24,6 +33,7 @@ use cosmic::{
         },
         sctk::{
             self,
+            output::{OutputHandler, OutputState},
             reexports::{calloop, calloop_wayland_source::WaylandSource},
             registry::{ProvidesRegistryState, RegistryState},
             seat::{Capability, SeatHandler, SeatState},
@@ -31,10 +41,14 @@ use cosmic::{
         toplevel_info::{ToplevelInfoHandler, ToplevelInfoState},
         toplevel_management::{ToplevelManagerHandler, ToplevelManagerState},
         wayland_client::{
-            Connection, QueueHandle, WEnum, globals::registry_queue_init, protocol::wl_seat::WlSeat,
+            Connection, Proxy, QueueHandle, WEnum,
+            globals::registry_queue_init,
+            protocol::{wl_output::WlOutput, wl_seat::WlSeat},
         },
         wayland_protocols::ext::foreign_toplevel_list::v1::client::ext_foreign_toplevel_handle_v1::ExtForeignToplevelHandleV1,
-        wayland_protocols::ext::workspace::v1::client::ext_workspace_handle_v1::State as WorkspaceFlags,
+        wayland_protocols::ext::workspace::v1::client::ext_workspace_handle_v1::{
+            ExtWorkspaceHandleV1, State as WorkspaceFlags,
+        },
         workspace::{WorkspaceHandler, WorkspaceState},
     },
     iced::{Subscription, stream},
@@ -56,6 +70,22 @@ pub struct Window {
     pub handle: ZcosmicToplevelHandleV1,
     /// On a workspace that shows now (or on all of them).
     pub here: bool,
+    /// The workspaces it's on; none when on all of them.
+    pub workspaces: HashSet<ExtWorkspaceHandleV1>,
+}
+
+/// A workspace as the overview shows it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Workspace {
+    pub handle: ExtWorkspaceHandleV1,
+    /// What its picture goes by (`workspace_key`).
+    pub key: String,
+    pub name: String,
+    pub active: bool,
+    /// Kept when it has no windows.
+    pub pinned: bool,
+    /// The output its group is on: a window moved here goes there.
+    pub output: Option<WlOutput>,
 }
 
 /// What the wayland thread reports.
@@ -64,6 +94,8 @@ pub enum Event {
     Ready(calloop::channel::SyncSender<Command>),
     /// Every window, the one used last first.
     Windows(Vec<Window>),
+    /// Each group's workspaces (one group an output), in order.
+    Workspaces(Vec<Vec<Workspace>>),
     /// The thread that talks to the compositor could not start, or has ended.
     Unavailable,
 }
@@ -72,6 +104,13 @@ pub enum Event {
 #[derive(Clone, Debug)]
 pub enum Command {
     Activate(ZcosmicToplevelHandleV1),
+    /// Ask a window to close, as its own close button would.
+    Close(ZcosmicToplevelHandleV1),
+    ActivateWorkspace(ExtWorkspaceHandleV1),
+    /// A workspace pinned (true) or not.
+    Pin(ExtWorkspaceHandleV1, bool),
+    /// A window onto a workspace, on that workspace's output.
+    Move(ZcosmicToplevelHandleV1, ExtWorkspaceHandleV1, WlOutput),
 }
 
 /// The windows as they change, and a way to raise one.
@@ -88,8 +127,8 @@ pub fn subscription() -> Subscription<Event> {
                     return futures::future::pending().await;
                 }
             }
-            while let Some(list) = rx.next().await {
-                let _ = output.send(Event::Windows(list)).await;
+            while let Some(event) = rx.next().await {
+                let _ = output.send(event).await;
             }
             let _ = output.send(Event::Unavailable).await;
             futures::future::pending().await
@@ -97,7 +136,7 @@ pub fn subscription() -> Subscription<Event> {
     })
 }
 
-fn start(tx: mpsc::Sender<Vec<Window>>) -> Option<calloop::channel::SyncSender<Command>> {
+fn start(tx: mpsc::Sender<Event>) -> Option<calloop::channel::SyncSender<Command>> {
     let (commands, receiver) = calloop::channel::sync_channel(16);
     std::thread::Builder::new()
         .name("windows".into())
@@ -106,7 +145,7 @@ fn start(tx: mpsc::Sender<Vec<Window>>) -> Option<calloop::channel::SyncSender<C
     Some(commands)
 }
 
-fn run(commands: calloop::channel::Channel<Command>, tx: mpsc::Sender<Vec<Window>>) {
+fn run(commands: calloop::channel::Channel<Command>, tx: mpsc::Sender<Event>) {
     let connection = match Connection::connect_to_env() {
         Ok(connection) => connection,
         Err(err) => return tracing::warn!("windows: no wayland connection: {err}"),
@@ -135,9 +174,12 @@ fn run(commands: calloop::channel::Channel<Command>, tx: mpsc::Sender<Vec<Window
             "windows: the compositor offers no toplevel info or management here"
         );
     };
+    // Before the workspaces, so outputs are known when groups name them.
+    let outputs = OutputState::new(&globals, &qh);
     let workspaces = WorkspaceState::new(&registry, &qh);
     let mut state = State {
         seats: SeatState::new(&globals, &qh),
+        outputs,
         registry,
         info,
         manager,
@@ -147,6 +189,7 @@ fn run(commands: calloop::channel::Channel<Command>, tx: mpsc::Sender<Vec<Window
         settle_at: None,
         raised_at: None,
         sent: Vec::new(),
+        sent_workspaces: Vec::new(),
         tx,
         running: true,
     };
@@ -167,6 +210,44 @@ fn run(commands: calloop::channel::Channel<Command>, tx: mpsc::Sender<Vec<Window
                     bring_to_front(&mut state.order, &raised);
                     state.raised_at = Some(Instant::now());
                     state.send();
+                }
+            }
+            calloop::channel::Event::Msg(Command::Close(handle)) => state.manager.manager.close(&handle),
+            calloop::channel::Event::Msg(Command::ActivateWorkspace(handle)) => {
+                handle.activate();
+                match state.workspaces.workspace_manager().get() {
+                    Ok(manager) => manager.commit(),
+                    Err(err) => tracing::warn!("windows: no workspace manager: {err}"),
+                }
+            }
+            calloop::channel::Event::Msg(Command::Pin(handle, pinned)) => {
+                let cosmic = state
+                    .workspaces
+                    .workspace_info(&handle)
+                    .and_then(|w| w.cosmic_handle.clone())
+                    .filter(|c| c.version() >= zcosmic_workspace_handle_v2::REQ_PIN_SINCE);
+                let Some(cosmic) = cosmic else {
+                    return tracing::warn!("windows: this compositor can't pin workspaces");
+                };
+                if pinned {
+                    cosmic.pin();
+                } else {
+                    cosmic.unpin();
+                }
+                match state.workspaces.workspace_manager().get() {
+                    Ok(manager) => manager.commit(),
+                    Err(err) => tracing::warn!("windows: no workspace manager: {err}"),
+                }
+            }
+            calloop::channel::Event::Msg(Command::Move(window, workspace, output)) => {
+                // Version 2 brought moving to an ext workspace.
+                if state.manager.manager.version() >= 2 {
+                    state
+                        .manager
+                        .manager
+                        .move_to_ext_workspace(&window, &workspace, &output);
+                } else {
+                    tracing::warn!("windows: this compositor can't move windows between workspaces");
                 }
             }
             calloop::channel::Event::Closed => state.running = false,
@@ -190,6 +271,7 @@ fn run(commands: calloop::channel::Channel<Command>, tx: mpsc::Sender<Vec<Window
 struct State {
     registry: RegistryState,
     seats: SeatState,
+    outputs: OutputState,
     info: ToplevelInfoState,
     manager: ToplevelManagerState,
     workspaces: WorkspaceState,
@@ -200,9 +282,10 @@ struct State {
     settle_at: Option<Instant>,
     /// When the switcher last raised a window.
     raised_at: Option<Instant>,
-    /// The list as last sent.
+    /// The lists as last sent.
     sent: Vec<Window>,
-    tx: mpsc::Sender<Vec<Window>>,
+    sent_workspaces: Vec<Vec<Workspace>>,
+    tx: mpsc::Sender<Event>,
     running: bool,
 }
 
@@ -243,9 +326,44 @@ impl State {
         }
     }
 
-    /// The list sent if it changed. Only windows cctk has the cosmic handle
-    /// of can be raised, so only they are listed.
+    /// The lists sent if they changed. Only windows cctk has the cosmic
+    /// handle of can be raised, so only they are listed.
     fn send(&mut self) {
+        let groups: Vec<Vec<Workspace>> = self
+            .workspaces
+            .workspace_groups()
+            .map(|group| {
+                let output = group
+                    .outputs
+                    .first()
+                    .and_then(|o| self.outputs.info(o))
+                    .and_then(|info| info.name)
+                    .unwrap_or_default();
+                let mut list: Vec<_> = group
+                    .workspaces
+                    .iter()
+                    .filter_map(|handle| self.workspaces.workspace_info(handle))
+                    .filter(|w| !w.state.contains(WorkspaceFlags::Hidden))
+                    .collect();
+                list.sort_by(|a, b| a.coordinates.cmp(&b.coordinates));
+                list.into_iter()
+                    .map(|w| Workspace {
+                        handle: w.handle.clone(),
+                        key: workspace_key(&output, &w.name),
+                        name: w.name.clone(),
+                        active: w.state.contains(WorkspaceFlags::Active),
+                        pinned: w.cosmic_state.contains(CosmicWorkspaceFlags::Pinned),
+                        output: group.outputs.first().cloned(),
+                    })
+                    .collect()
+            })
+            .collect();
+        if groups != self.sent_workspaces {
+            self.sent_workspaces = groups.clone();
+            if block_on(self.tx.send(Event::Workspaces(groups))).is_err() {
+                self.running = false;
+            }
+        }
         let showing: Vec<_> = self
             .workspaces
             .workspace_groups()
@@ -268,17 +386,27 @@ impl State {
                     handle: t.cosmic_toplevel.clone()?,
                     here: t.workspace.is_empty()
                         || t.workspace.iter().any(|w| showing.contains(&w)),
+                    workspaces: t.workspace.clone(),
                 })
             })
             .collect();
         if list != self.sent {
             self.sent = list.clone();
-            if block_on(self.tx.send(list)).is_err() {
+            if block_on(self.tx.send(Event::Windows(list))).is_err() {
                 self.running = false;
             }
         }
     }
 }
+
+/// A workspace's name for its picture, the same on every connection (the
+/// handles aren't): its output's name and its own.
+pub fn workspace_key(output: &str, name: &str) -> String {
+    format!("{WORKSPACE_KEY}{output} {name}")
+}
+
+/// What every workspace picture's key starts with.
+pub const WORKSPACE_KEY: &str = "workspace ";
 
 /// The window active, if just one is, to the front; whether that moved it.
 fn settled<T: PartialEq + Clone>(order: &mut Vec<T>, active: &[T]) -> bool {
@@ -301,7 +429,21 @@ impl ProvidesRegistryState for State {
     fn registry(&mut self) -> &mut RegistryState {
         &mut self.registry
     }
-    sctk::registry_handlers![SeatState];
+    sctk::registry_handlers![SeatState, OutputState];
+}
+
+impl OutputHandler for State {
+    fn output_state(&mut self) -> &mut OutputState {
+        &mut self.outputs
+    }
+    // An output's name may come after the workspaces that name it.
+    fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {
+        self.send();
+    }
+    fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {
+        self.send();
+    }
+    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
 }
 
 impl SeatHandler for State {
@@ -380,6 +522,7 @@ cctk::delegate_toplevel_info!(State);
 cctk::delegate_toplevel_manager!(State);
 cctk::delegate_workspace!(State);
 sctk::delegate_seat!(State);
+sctk::delegate_output!(State);
 sctk::delegate_registry!(State);
 
 #[cfg(test)]
@@ -421,8 +564,20 @@ mod tests {
         let _commands = start(tx).expect("the wayland thread starts");
         std::thread::sleep(std::time::Duration::from_millis(500));
         let mut last = None;
-        while let Ok(list) = rx.try_recv() {
-            last = Some(list);
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                Event::Windows(list) => last = Some(list),
+                Event::Workspaces(groups) => {
+                    for group in groups {
+                        let names: Vec<_> = group
+                            .iter()
+                            .map(|w| format!("{}{}", w.name, if w.active { "*" } else { "" }))
+                            .collect();
+                        println!("workspaces: {}", names.join(" "));
+                    }
+                }
+                _ => {}
+            }
         }
         let list = last.expect("a window list");
         for window in &list {

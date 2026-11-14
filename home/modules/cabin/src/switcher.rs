@@ -7,14 +7,17 @@
 //! Shift goes back, as do the arrow keys; letting go of Alt or Super raises
 //! the pick. A press on a mark raises that one; Escape or a press anywhere
 //! else leaves things as they were. Super+Tab (`cabinctl switch next
-//! --previews`) shows the windows as cards with a picture of each instead.
+//! --previews`) shows the windows as cards with a live picture of each
+//! instead (`backend::live`).
 
 use std::collections::HashMap;
+
+use cosmic::iced::platform_specific::shell::subsurface_widget::{Subsurface, SubsurfaceBuffer};
 
 use cosmic::{
     Element,
     iced::{
-        self, Alignment, Background, Color, ContentFit, Length, Point, Rectangle, Size,
+        self, Alignment, Background, Color, Length, Point, Rectangle, Size,
         keyboard::Modifiers, window,
     },
     theme, widget,
@@ -37,9 +40,9 @@ const PAD: f32 = 16.0;
 /// it: the picture is 16:10, the app's mark and name under it.
 const CARD: f32 = 280.0;
 const CARD_LIMIT: usize = 5;
-const CARD_PAD: f32 = 8.0;
-const LABEL_GAP: f32 = 6.0;
-const LABEL: f32 = 20.0;
+pub const CARD_PAD: f32 = 8.0;
+pub const LABEL_GAP: f32 = 6.0;
+pub const LABEL: f32 = 20.0;
 /// Under the row: the picked window's app and title.
 const CAPTION_GAP: f32 = 12.0;
 const CAPTION: f32 = 22.0;
@@ -78,9 +81,8 @@ pub struct Switcher {
     pub held: bool,
     /// Drawn: not until held a moment, so a quick tap doesn't flash it.
     pub shown: bool,
-    /// Cards with pictures (Super+Tab), the pictures by window id as they come.
+    /// Cards with live pictures (Super+Tab).
     pub previews: bool,
-    pub thumbs: HashMap<String, widget::image::Handle>,
     /// The first window in sight.
     pub offset: usize,
 }
@@ -107,7 +109,6 @@ impl Switcher {
             held: false,
             shown: false,
             previews,
-            thumbs: HashMap::new(),
             offset: 0,
         }
     }
@@ -206,43 +207,6 @@ impl Switcher {
         }
     }
 
-    /// A window as its card: the picture (its mark until that comes), the
-    /// app's mark and name under it.
-    fn card(&self, w: &Window, tile: f32) -> Element<'_, Message> {
-        let (width, height) = (tile - 2.0 * CARD_PAD, picture_height(tile));
-        let picture: Element<'_, Message> = match self.thumbs.get(&w.id) {
-            Some(handle) => widget::image(handle.clone())
-                .width(Length::Fixed(width))
-                .height(Length::Fixed(height))
-                .content_fit(ContentFit::Contain)
-                .into(),
-            None => mark(&w.app_id, height),
-        };
-        let picture = widget::container(picture)
-            .width(Length::Fixed(width))
-            .height(Length::Fixed(height))
-            .center(Length::Fill)
-            .class(theme::Container::custom(|_| widget::container::Style {
-                background: Some(Background::Color(palette::CARD)),
-                border: iced::Border {
-                    radius: 10.0.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }));
-        let name = ellipsize(&name(&w.app_id), ((width / 7.0) as usize).saturating_sub(4));
-        let label = widget::row::with_children(vec![
-            mark(&w.app_id, LABEL * 1.6),
-            ui::text::small(name).into(),
-        ])
-        .spacing(6)
-        .align_y(Alignment::Center)
-        .height(Length::Fixed(LABEL));
-        widget::column::with_children(vec![picture.into(), label.into()])
-            .spacing(LABEL_GAP)
-            .into()
-    }
-
     /// The region the compositor frosts.
     pub fn frost_region(&self) -> Option<Vec<Rectangle>> {
         self.shown
@@ -251,7 +215,8 @@ impl Switcher {
             .map(|(rect, _)| ui::popup::rounded_region(&[rect], PANE_RADIUS))
     }
 
-    pub fn view(&self) -> Element<'_, Message> {
+    /// With the live pictures by window id.
+    pub fn view<'a>(&'a self, pictures: &HashMap<String, SubsurfaceBuffer>) -> Element<'a, Message> {
         let (Some(size), Some((frame, fit)), true) = (self.size, self.frame(), self.shown) else {
             return widget::space::horizontal().into();
         };
@@ -281,7 +246,8 @@ impl Switcher {
             .take(fit.shown)
             .map(|(i, w)| {
                 let (inside, padding) = if self.previews {
-                    (self.card(w, tile), CARD_PAD)
+                    let picture = pictures.get(&w.id);
+                    (card(w, &name(&w.app_id), picture, tile), CARD_PAD)
                 } else {
                     (mark(&w.app_id, tile), 0.0)
                 };
@@ -359,8 +325,61 @@ fn slid(offset: usize, selected: usize, shown: usize, n: usize) -> usize {
 }
 
 /// A card's picture's height, 16:10 inside the card's padding.
-fn picture_height(tile: f32) -> f32 {
+pub fn picture_height(tile: f32) -> f32 {
     ((tile - 2.0 * CARD_PAD) * 0.625).round()
+}
+
+/// A window as its card, `tile` wide padding and all: its live picture
+/// (its mark until that comes), the app's mark and `label` under it. The
+/// picture is a subsurface, over whatever the card's surface draws there.
+pub fn card<'a, M: Clone + 'a>(
+    w: &Window,
+    label_text: &str,
+    picture: Option<&SubsurfaceBuffer>,
+    tile: f32,
+) -> Element<'a, M> {
+    let (width, height) = (tile - 2.0 * CARD_PAD, picture_height(tile));
+    // Shrink: the compositor scales it into the room, its shape kept.
+    let picture: Element<'a, M> = match picture {
+        Some(buffer) => Subsurface::new(buffer.clone()).into(),
+        None => mark(&w.app_id, height),
+    };
+    let picture = widget::container(picture)
+        .center_x(Length::Fixed(width))
+        .center_y(Length::Fixed(height))
+        .class(theme::Container::custom(|_| widget::container::Style {
+            background: Some(Background::Color(palette::CARD)),
+            border: iced::Border {
+                radius: 10.0.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }));
+    widget::column::with_children(vec![picture.into(), label(w, label_text, width, None)])
+        .spacing(LABEL_GAP)
+        .into()
+}
+
+/// A window's label, `width` wide: the app's mark, `text` cut to fit, and
+/// `trailing` at the end.
+pub fn label<'a, M: 'a>(
+    w: &Window,
+    text: &str,
+    width: f32,
+    trailing: Option<Element<'a, M>>,
+) -> Element<'a, M> {
+    let room = width - if trailing.is_some() { LABEL + 8.0 } else { 0.0 };
+    let text = ellipsize(text, ((room / 7.5) as usize).saturating_sub(5));
+    let mut parts = vec![
+        mark(&w.app_id, LABEL * 1.6),
+        ui::text::body(text).width(Length::Fill).into(),
+    ];
+    parts.extend(trailing);
+    widget::row::with_children(parts)
+        .spacing(6)
+        .align_y(Alignment::Center)
+        .height(Length::Fixed(LABEL))
+        .into()
 }
 
 /// The pick on opening: forward, the window used before this one (this
